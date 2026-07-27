@@ -88,7 +88,6 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
-    // Include XML comments from Presentation assembly
     var xmlFile = $"{typeof(AuthController).Assembly.GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     if (File.Exists(xmlPath)) c.IncludeXmlComments(xmlPath);
@@ -96,7 +95,10 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ─── Middleware Pipeline ────────────────────────────────────────────────
+// ─── Seed Roles (runs once on startup) ─────────────────────────────────────
+await SeedRolesAsync(app);
+
+// ─── Middleware Pipeline ────────────────────────────────────────────────────
 app.UseMiddleware<ExceptionHandlerMiddleware>();
 
 if (app.Environment.IsDevelopment())
@@ -105,7 +107,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c =>
     {
         c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azka Maintenance API v1");
-        c.RoutePrefix = string.Empty; // Swagger at root
+        c.RoutePrefix = string.Empty;
     });
 }
 
@@ -114,3 +116,18 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
+
+// ─── Role Seeder ────────────────────────────────────────────────────────────
+static async Task SeedRolesAsync(WebApplication app)
+{
+    using var scope = app.Services.CreateScope();
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+
+    string[] roles = ["Admin", "Dispatcher", "Engineer"];
+
+    foreach (var role in roles)
+    {
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+    }
+}
