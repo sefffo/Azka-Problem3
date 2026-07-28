@@ -1,29 +1,46 @@
-using System.Linq.Expressions;
-using Azka.Domain.Entities;
 using Azka.Domain.Interfaces;
+using Azka.Domain.Specifications;
 using Azka.Persistence.Data;
+using Azka.Persistence.Specifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace Azka.Persistence.Repositories;
 
-public class GenericRepository<TEntity, TKey>(AppDbContext context)
-    : IGenericRepository<TEntity, TKey> where TEntity : BaseEntity<TKey>
+public class GenericRepository<TEntity, TKey>(
+    AppDbContext context) : IGenericRepository<TEntity, TKey>
+    where TEntity : class
 {
-    public async Task<IEnumerable<TEntity>> GetAllAsync()
-        => await context.Set<TEntity>().ToListAsync();
+    private readonly DbSet<TEntity> _dbSet = context.Set<TEntity>();
 
+    // ── Basic CRUD ────────────────────────────────────────────────────────────
     public async Task<TEntity?> GetByIdAsync(TKey id)
-        => await context.Set<TEntity>().FindAsync(id);
+        => await _dbSet.FindAsync(id);
 
-    public async Task<IEnumerable<TEntity>> FindAsync(Expression<Func<TEntity, bool>> predicate)
-        => await context.Set<TEntity>().Where(predicate).ToListAsync();
+    public async Task<IReadOnlyList<TEntity>> GetAllAsync()
+        => await _dbSet.ToListAsync();
 
     public async Task AddAsync(TEntity entity)
-        => await context.Set<TEntity>().AddAsync(entity);
+        => await _dbSet.AddAsync(entity);
 
     public void Update(TEntity entity)
-        => context.Set<TEntity>().Update(entity);
+        => _dbSet.Update(entity);
 
-    public void Remove(TEntity entity)
-        => context.Set<TEntity>().Remove(entity);
+    public void Delete(TEntity entity)
+        => _dbSet.Remove(entity);
+
+    // ── Specification-based queries ───────────────────────────────────────────
+    public async Task<TEntity?> GetBySpecAsync(ISpecification<TEntity> spec)
+        => await SpecificationEvaluator<TEntity>
+            .GetQuery(_dbSet.AsQueryable(), spec)
+            .FirstOrDefaultAsync();
+
+    public async Task<IReadOnlyList<TEntity>> ListAsync(ISpecification<TEntity> spec)
+        => await SpecificationEvaluator<TEntity>
+            .GetQuery(_dbSet.AsQueryable(), spec)
+            .ToListAsync();
+
+    public async Task<int> CountAsync(ISpecification<TEntity> spec)
+        => await SpecificationEvaluator<TEntity>
+            .GetQuery(_dbSet.AsQueryable(), spec)
+            .CountAsync();
 }

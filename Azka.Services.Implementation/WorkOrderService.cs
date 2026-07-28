@@ -1,6 +1,7 @@
 using Azka.Domain.Entities;
 using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
+using Azka.Domain.Specifications.WorkOrders;
 using Azka.Persistence.Data;
 using Azka.Services.DTOs.Search;
 using Azka.Services.DTOs.WorkOrder;
@@ -101,45 +102,42 @@ public class WorkOrderService(
         return ApiResponse<bool>.Success(true, "Work order cancelled.");
     }
 
+    /// <summary>
+    /// FR 7 — Advanced search using the Specification Pattern.
+    /// WorkOrderSearchSpecification encapsulates ALL filter logic.
+    /// WorkOrderService has zero raw Where() clauses.
+    /// </summary>
     public async Task<ApiResponse<PagedResult<WorkOrderDto>>> SearchAsync(WorkOrderSearchDto searchDto)
     {
-        var query = context.WorkOrders
-            .AsNoTracking()
-            .Include(w => w.Asset)
-            .Include(w => w.Assignments).ThenInclude(a => a.Engineer)
-            .AsQueryable();
+        var repo = unitOfWork.GetRepository<WorkOrder, int>();
 
-        if (!string.IsNullOrWhiteSpace(searchDto.WorkOrderNumber))
-            query = query.Where(w => w.WorkOrderNumber.Contains(searchDto.WorkOrderNumber));
+        // Count query — same filters, no pagination, no includes (fast)
+        var countSpec = new WorkOrderSearchSpecification(
+            searchDto.WorkOrderNumber,
+            searchDto.AssetNumber,
+            searchDto.Status,
+            searchDto.Priority,
+            searchDto.Region,
+            searchDto.EngineerName,
+            searchDto.FromDate,
+            searchDto.ToDate);
 
-        if (!string.IsNullOrWhiteSpace(searchDto.AssetNumber))
-            query = query.Where(w => w.Asset.AssetNumber.Contains(searchDto.AssetNumber));
+        var total = await repo.CountAsync(countSpec);
 
-        if (searchDto.Status.HasValue)
-            query = query.Where(w => w.Status == searchDto.Status.Value);
+        // Data query — same filters + includes + ordering + pagination
+        var dataSpec = new WorkOrderSearchSpecification(
+            searchDto.WorkOrderNumber,
+            searchDto.AssetNumber,
+            searchDto.Status,
+            searchDto.Priority,
+            searchDto.Region,
+            searchDto.EngineerName,
+            searchDto.FromDate,
+            searchDto.ToDate,
+            searchDto.Page,
+            searchDto.PageSize);
 
-        if (searchDto.Priority.HasValue)
-            query = query.Where(w => w.Priority == searchDto.Priority.Value);
-
-        if (!string.IsNullOrWhiteSpace(searchDto.Region))
-            query = query.Where(w => w.Assignments.Any(a => a.Engineer.Region.ToLower() == searchDto.Region.ToLower()));
-
-        if (!string.IsNullOrWhiteSpace(searchDto.EngineerName))
-            query = query.Where(w => w.Assignments.Any(a => a.Engineer.FullName.Contains(searchDto.EngineerName)));
-
-        if (searchDto.FromDate.HasValue)
-            query = query.Where(w => w.RequestedDate >= searchDto.FromDate.Value);
-
-        if (searchDto.ToDate.HasValue)
-            query = query.Where(w => w.RequestedDate <= searchDto.ToDate.Value);
-
-        var total = await query.CountAsync();
-        var items = await query
-            .OrderByDescending(w => w.Priority)
-            .ThenBy(w => w.DueDate)
-            .Skip((searchDto.Page - 1) * searchDto.PageSize)
-            .Take(searchDto.PageSize)
-            .ToListAsync();
+        var items = await repo.ListAsync(dataSpec);
 
         return ApiResponse<PagedResult<WorkOrderDto>>.Success(new PagedResult<WorkOrderDto>
         {
@@ -156,9 +154,9 @@ public class WorkOrderService(
         {
             MaintenanceType.PreventiveMaintenance => "PM",
             MaintenanceType.CorrectiveMaintenance => "CM",
-            MaintenanceType.EmergencyMaintenance => "EM",
-            MaintenanceType.Installation => "IN",
-            MaintenanceType.Inspection => "IS",
+            MaintenanceType.EmergencyMaintenance  => "EM",
+            MaintenanceType.Installation          => "IN",
+            MaintenanceType.Inspection            => "IS",
             _ => "WO"
         };
         return $"{prefix}-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..6].ToUpper()}";

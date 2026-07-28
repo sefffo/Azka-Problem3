@@ -1,14 +1,20 @@
+using Azka.Domain.Specifications;
 using System.Linq.Expressions;
-using Azka.Domain.Entities;
 
 namespace Azka.Domain.Interfaces;
 
-public interface IGenericRepository<TEntity, TKey> where TEntity : BaseEntity<TKey>
+public interface IGenericRepository<TEntity, TKey>
+    where TEntity : class
 {
-    Task<IEnumerable<TEntity>> GetAllAsync();
+    // ── Basic CRUD ────────────────────────────────────────────────────────────
     Task<TEntity?> GetByIdAsync(TKey id);
-    Task<IEnumerable<TEntity>> FindAsync(Expression<Func<TEntity, bool>> predicate);
+    Task<IReadOnlyList<TEntity>> GetAllAsync();
     Task AddAsync(TEntity entity);
     void Update(TEntity entity);
-    void Remove(TEntity entity);
+    void Delete(TEntity entity);
+
+    // ── Specification-based queries ───────────────────────────────────────────
+    Task<TEntity?> GetBySpecAsync(ISpecification<TEntity> spec);
+    Task<IReadOnlyList<TEntity>> ListAsync(ISpecification<TEntity> spec);
+    Task<int> CountAsync(ISpecification<TEntity> spec);
 }

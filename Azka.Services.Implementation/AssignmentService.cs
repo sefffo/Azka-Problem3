@@ -1,6 +1,7 @@
 using Azka.Domain.Entities;
 using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
+using Azka.Domain.Specifications.Assignments;
 using Azka.Persistence.Data;
 using Azka.Services.DTOs.Assignment;
 using Azka.Services.Exceptions;
@@ -31,20 +32,21 @@ public class AssignmentService(
         if (workOrder.Status == WorkOrderStatus.Completed)
             throw new BadRequestException("Cannot assign a completed work order.");
 
-        // ─── Conflict Detection (Business Rule #1) ────────────────────────────
-        var hasConflict = await context.Assignments
-            .AnyAsync(a =>
-                a.EngineerId == dto.EngineerId
-                && a.Status != AssignmentStatus.Cancelled
-                && a.Status != AssignmentStatus.Failed
-                && a.ScheduledStart < dto.ScheduledEnd
-                && a.ScheduledEnd > dto.ScheduledStart);
+        // ─── FR 5 Conflict Detection via Specification ────────────────────────
+        var conflictSpec = new AssignmentConflictSpecification(
+            dto.EngineerId,
+            dto.ScheduledStart,
+            dto.ScheduledEnd);
 
-        if (hasConflict)
+        var conflictCount = await unitOfWork
+            .GetRepository<Assignment, int>()
+            .CountAsync(conflictSpec);
+
+        if (conflictCount > 0)
             throw new ConflictException(
                 $"Engineer '{engineer.FullName}' has an overlapping assignment during the requested time slot.");
 
-        // ─── Daily Capacity Check (Business Rule #7) ──────────────────────────
+        // ─── Daily Capacity Check ─────────────────────────────────────────────
         var dayStart = dto.ScheduledStart.Date;
         var dayEnd = dayStart.AddDays(1);
 
@@ -76,7 +78,6 @@ public class AssignmentService(
         var repo = unitOfWork.GetRepository<Assignment, int>();
         await repo.AddAsync(assignment);
 
-        // Update work order status to Assigned
         workOrder.Status = WorkOrderStatus.Assigned;
         var woRepo = unitOfWork.GetRepository<WorkOrder, int>();
         woRepo.Update(workOrder);
@@ -102,37 +103,38 @@ public class AssignmentService(
         if (assignment.Status == AssignmentStatus.Cancelled)
             throw new BadRequestException("Cancelled assignments cannot be rescheduled.");
 
-        // ─── Conflict check excluding current assignment ───────────────────────
-        var hasConflict = await context.Assignments
-            .AnyAsync(a =>
-                a.Id != id
-                && a.EngineerId == assignment.EngineerId
-                && a.Status != AssignmentStatus.Cancelled
-                && a.Status != AssignmentStatus.Failed
-                && a.ScheduledStart < dto.NewScheduledEnd
-                && a.ScheduledEnd > dto.NewScheduledStart);
+        // ─── FR 6 Conflict check (excluding self) via Specification ───────────
+        var conflictSpec = new AssignmentConflictSpecification(
+            assignment.EngineerId,
+            dto.NewScheduledStart,
+            dto.NewScheduledEnd,
+            excludeAssignmentId: id);
 
-        if (hasConflict)
+        var conflictCount = await unitOfWork
+            .GetRepository<Assignment, int>()
+            .CountAsync(conflictSpec);
+
+        if (conflictCount > 0)
             throw new ConflictException(
                 $"Engineer '{assignment.Engineer.FullName}' has a conflicting assignment during the new time slot.");
 
-        // ─── Preserve history (Business Rule #6 & #9) ─────────────────────────
+        // ─── Preserve history ─────────────────────────────────────────────────
         var history = new AssignmentHistory
         {
-            AssignmentId = assignment.Id,
-            PreviousStart = assignment.ScheduledStart,
-            PreviousEnd = assignment.ScheduledEnd,
+            AssignmentId  = assignment.Id,
+            PreviousStart  = assignment.ScheduledStart,
+            PreviousEnd    = assignment.ScheduledEnd,
             PreviousStatus = assignment.Status.ToString(),
-            ChangedBy = changedBy,
-            ChangeReason = dto.ChangeReason
+            ChangedBy      = changedBy,
+            ChangeReason   = dto.ChangeReason
         };
 
         var historyRepo = unitOfWork.GetRepository<AssignmentHistory, int>();
         await historyRepo.AddAsync(history);
 
         assignment.ScheduledStart = dto.NewScheduledStart;
-        assignment.ScheduledEnd = dto.NewScheduledEnd;
-        assignment.UpdatedAt = DateTime.UtcNow;
+        assignment.ScheduledEnd   = dto.NewScheduledEnd;
+        assignment.UpdatedAt      = DateTime.UtcNow;
 
         var repo = unitOfWork.GetRepository<Assignment, int>();
         repo.Update(assignment);
@@ -155,7 +157,6 @@ public class AssignmentService(
         assignment.Status = dto.Status;
         assignment.UpdatedAt = DateTime.UtcNow;
 
-        // Sync work order status
         if (dto.Status == AssignmentStatus.InProgress)
             assignment.WorkOrder.Status = WorkOrderStatus.InProgress;
         else if (dto.Status == AssignmentStatus.Completed)
@@ -170,14 +171,8 @@ public class AssignmentService(
 
     public async Task<ApiResponse<IEnumerable<AssignmentDto>>> GetByEngineerAsync(int engineerId)
     {
-        var assignments = await context.Assignments
-            .AsNoTracking()
-            .Include(a => a.Engineer)
-            .Include(a => a.WorkOrder)
-            .Where(a => a.EngineerId == engineerId)
-            .OrderBy(a => a.ScheduledStart)
-            .ToListAsync();
-
+        var spec = new AssignmentsByEngineerSpecification(engineerId);
+        var assignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(spec);
         return ApiResponse<IEnumerable<AssignmentDto>>.Success(assignments.Select(MapToDto));
     }
 
@@ -206,12 +201,12 @@ public class AssignmentService(
 
         var history = new AssignmentHistory
         {
-            AssignmentId = assignment.Id,
-            PreviousStart = assignment.ScheduledStart,
-            PreviousEnd = assignment.ScheduledEnd,
+            AssignmentId   = assignment.Id,
+            PreviousStart  = assignment.ScheduledStart,
+            PreviousEnd    = assignment.ScheduledEnd,
             PreviousStatus = assignment.Status.ToString(),
-            ChangedBy = cancelledBy,
-            ChangeReason = "Cancelled"
+            ChangedBy      = cancelledBy,
+            ChangeReason   = "Cancelled"
         };
 
         var historyRepo = unitOfWork.GetRepository<AssignmentHistory, int>();
