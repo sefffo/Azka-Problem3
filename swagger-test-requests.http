@@ -1,0 +1,137 @@
+### Paste your Bearer token below, then run all requests top-to-bottom.
+@baseUrl = http://localhost:5000
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMmY4NGJhMy0yNzYwLTQyMTAtYjA1OS1hYTFlMDE2NWJjMmQiLCJlbWFpbCI6ImRpc3BhdGNoZXJAdGVzdC5jb20iLCJodHRwOi8vc2NoZW1hcy54bWxzb2FwLm9yZy93cy8yMDA1LzA1L2lkZW50aXR5L2NsYWltcy9uYW1lIjoiVGVzdCBEaXNwYXRjaGVyIiwiaHR0cDovL3NjaGVtYXMubWljcm9zb2Z0LmNvbS93cy8yMDA4LzA2L2lkZW50aXR5L2NsYWltcy9yb2xlIjoiRGlzcGF0Y2hlciIsImp0aSI6Ijc1MzcwYTU0LTQ1MDAtNDA2Yy1iMjg2LWFjM2QxYTU3MjIxMiIsImV4cCI6MTc4NTM1NDMzNiwiaXNzIjoiQXprYU1haW50ZW5hbmNlQVBJIiwiYXVkIjoiQXprYU1haW50ZW5hbmNlQ2xpZW50cyJ9.3yP4cAOicitGz_-PnZXkiMvHij1tgWPfs4Gjakft6wc
+
+### ─── WORK ORDERS ───────────────────────────────────────
+
+### Create work order for asset 1
+POST {{baseUrl}}/api/WorkOrders
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "assetId": 1,
+  "maintenanceType": 1,
+  "priority": 2,
+  "estimatedHours": 2,
+  "requestedDate": "2026-07-28T00:00:00Z",
+  "dueDate": "2026-07-30T00:00:00Z"
+}
+
+### ─── ASSIGNMENTS ───────────────────────────────────────
+
+### FR-4: Assign Ahmed 09:00-11:00 (should succeed)
+POST {{baseUrl}}/api/Assignments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "engineerId": 1,
+  "scheduledStart": "2026-07-28T09:00:00Z",
+  "scheduledEnd": "2026-07-28T11:00:00Z"
+}
+
+### FR-5: Overlapping slot 10:30-12:00 (should FAIL 409)
+POST {{baseUrl}}/api/Assignments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "engineerId": 1,
+  "scheduledStart": "2026-07-28T10:30:00Z",
+  "scheduledEnd": "2026-07-28T12:00:00Z"
+}
+
+### FR-4: Outside working hours 06:00-07:00 (should FAIL 400)
+POST {{baseUrl}}/api/Assignments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "engineerId": 1,
+  "scheduledStart": "2026-07-28T06:00:00Z",
+  "scheduledEnd": "2026-07-28T07:00:00Z"
+}
+
+### FR-4: Assign Sara 09:00-11:00 (should succeed — different engineer)
+POST {{baseUrl}}/api/Assignments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "engineerId": 2,
+  "scheduledStart": "2026-07-28T09:00:00Z",
+  "scheduledEnd": "2026-07-28T11:00:00Z"
+}
+
+### Get assignment by ID
+GET {{baseUrl}}/api/Assignments/1
+Authorization: Bearer {{token}}
+
+### GET all assignments
+GET {{baseUrl}}/api/Assignments
+Authorization: Bearer {{token}}
+
+### FR-6: Reschedule assignment 1 to 13:00-15:00 (should succeed)
+PUT {{baseUrl}}/api/Assignments/1/reschedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "newScheduledStart": "2026-07-28T13:00:00Z",
+  "newScheduledEnd": "2026-07-28T15:00:00Z",
+  "changeReason": "Client requested afternoon slot"
+}
+
+### FR-6: Reschedule to conflicting slot (should FAIL 409)
+PUT {{baseUrl}}/api/Assignments/1/reschedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "newScheduledStart": "2026-07-28T10:00:00Z",
+  "newScheduledEnd": "2026-07-28T13:00:00Z",
+  "changeReason": "Test conflict"
+}
+
+### Update status to InProgress (3)
+PATCH {{baseUrl}}/api/Assignments/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": 3
+}
+
+### Update status to Completed (4)
+PATCH {{baseUrl}}/api/Assignments/1/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "status": 4
+}
+
+### Cancel assignment
+DELETE {{baseUrl}}/api/Assignments/1
+Authorization: Bearer {{token}}
+
+### Dashboard
+GET {{baseUrl}}/api/Dashboard
+Authorization: Bearer {{token}}
+
+### Engineers
+GET {{baseUrl}}/api/Engineers
+Authorization: Bearer {{token}}
+
+### Engineer workload
+GET {{baseUrl}}/api/Engineers/1/workload?date=2026-07-28
+Authorization: Bearer {{token}}
+
+### Assets
+GET {{baseUrl}}/api/Assets
+Authorization: Bearer {{token}}
