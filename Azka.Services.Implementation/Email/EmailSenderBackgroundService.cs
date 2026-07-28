@@ -1,48 +1,55 @@
+using Azka.Services.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Azka.Services.Implementation.Email;
 
 /// <summary>
-/// A long-running <see cref="BackgroundService"/> that continuously drains
-/// the <see cref="BackgroundEmailQueue"/> and executes each email job.
-/// Decoupled entirely from the HTTP request pipeline — SMTP latency never
-/// blocks a controller response.
+/// Long-running worker that drains <see cref="BackgroundEmailQueue"/>.
+/// Creates a fresh DI scope per job so it resolves a new scoped
+/// <see cref="IEmailService"/> — avoids ObjectDisposedException.
 /// </summary>
-public class EmailSenderBackgroundService(
+public sealed class EmailSenderBackgroundService(
     BackgroundEmailQueue queue,
+    IServiceScopeFactory scopeFactory,
     ILogger<EmailSenderBackgroundService> logger
 ) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        logger.LogInformation("[EmailWorker] Background email sender started.");
+        logger.LogInformation("[EmailWorker] Started.");
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Blocks here — zero CPU usage until a job is written to the channel.
                 var job = await queue.DequeueAsync(stoppingToken);
 
-                logger.LogInformation("[EmailWorker] Picked up email job, executing...");
-                await job(stoppingToken);
-                logger.LogInformation("[EmailWorker] Email job completed successfully.");
+                logger.LogInformation("[EmailWorker] Sending '{Subject}' → {To}",
+                    job.Subject, job.To);
+
+                // Each job gets its own scope → fresh IEmailService instance
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var emailService = scope.ServiceProvider.GetRequiredService<IEmailService>();
+
+                await emailService.SendAsync(job.To, job.Subject, job.Body, job.IsHtml);
+
+                logger.LogInformation("[EmailWorker] Sent successfully → {To}", job.To);
             }
             catch (OperationCanceledException)
             {
-                logger.LogInformation("[EmailWorker] Shutdown requested, stopping email worker.");
+                logger.LogInformation("[EmailWorker] Shutdown requested.");
                 break;
             }
             catch (Exception ex)
             {
-                // Log full details but do NOT rethrow — that would kill the worker permanently.
                 logger.LogError(ex,
-                    "[EmailWorker] FAILED to send email. ExType: {ExType} | Message: {ExMessage}",
+                    "[EmailWorker] Failed to send email. {ExType}: {Message}",
                     ex.GetType().Name, ex.Message);
             }
         }
 
-        logger.LogInformation("[EmailWorker] Background email sender stopped.");
+        logger.LogInformation("[EmailWorker] Stopped.");
     }
 }

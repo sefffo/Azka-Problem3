@@ -3,23 +3,23 @@ using System.Threading.Channels;
 namespace Azka.Services.Implementation.Email;
 
 /// <summary>
-/// An in-memory bounded channel that acts as a fire-and-forget queue.
-/// Any service drops an email job here and returns immediately —
-/// the <see cref="EmailSenderBackgroundService"/> picks it up off the HTTP thread.
+/// A bounded in-memory channel that queues <see cref="EmailJobDescriptor"/> records.
+/// HTTP-thread services write here and return immediately.
+/// <see cref="EmailSenderBackgroundService"/> reads and sends off the HTTP thread.
 /// </summary>
-public class BackgroundEmailQueue
+public sealed class BackgroundEmailQueue
 {
-    private readonly Channel<Func<CancellationToken, Task>> _queue;
+    private readonly Channel<EmailJobDescriptor> _queue =
+        Channel.CreateBounded<EmailJobDescriptor>(new BoundedChannelOptions(100)
+        {
+            FullMode = BoundedChannelFullMode.Wait
+        });
 
-    public BackgroundEmailQueue()
-    {
-        // Capacity of 100 queued emails; back-pressure drops oldest if full.
-        _queue = Channel.CreateBounded<Func<CancellationToken, Task>>(100);
-    }
+    public async ValueTask EnqueueAsync(EmailJobDescriptor job,
+        CancellationToken cancellationToken = default)
+        => await _queue.Writer.WriteAsync(job, cancellationToken);
 
-    public async ValueTask EnqueueAsync(Func<CancellationToken, Task> job)
-        => await _queue.Writer.WriteAsync(job);
-
-    public async ValueTask<Func<CancellationToken, Task>> DequeueAsync(CancellationToken cancellationToken)
+    public async ValueTask<EmailJobDescriptor> DequeueAsync(
+        CancellationToken cancellationToken)
         => await _queue.Reader.ReadAsync(cancellationToken);
 }
