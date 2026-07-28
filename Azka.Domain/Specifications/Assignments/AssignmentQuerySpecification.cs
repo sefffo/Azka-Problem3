@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Azka.Domain.Entities;
 using Azka.Domain.Enums;
 
@@ -20,20 +21,25 @@ public class AssignmentQuerySpecification : BaseSpecification<Assignment>
         int               pageSize    = 20,
         bool              countOnly   = false)
     {
+        Expression<Func<Assignment, bool>>? predicate = null;
+
         if (engineerId.HasValue)
-            AddCriteria(a => a.EngineerId == engineerId.Value);
+            predicate = Combine(predicate, a => a.EngineerId == engineerId.Value);
 
         if (workOrderId.HasValue)
-            AddCriteria(a => a.WorkOrderId == workOrderId.Value);
+            predicate = Combine(predicate, a => a.WorkOrderId == workOrderId.Value);
 
         if (status.HasValue)
-            AddCriteria(a => a.Status == status.Value);
+            predicate = Combine(predicate, a => a.Status == status.Value);
 
         if (fromDate.HasValue)
-            AddCriteria(a => a.ScheduledStart >= fromDate.Value);
+            predicate = Combine(predicate, a => a.ScheduledStart >= fromDate.Value);
 
         if (toDate.HasValue)
-            AddCriteria(a => a.ScheduledEnd <= toDate.Value);
+            predicate = Combine(predicate, a => a.ScheduledEnd <= toDate.Value);
+
+        if (predicate is not null)
+            AddCriteria(predicate);
 
         if (!countOnly)
         {
@@ -42,5 +48,16 @@ public class AssignmentQuerySpecification : BaseSpecification<Assignment>
             ApplyOrderByDescending(a => a.CreatedAt);
             ApplyPaging((page - 1) * pageSize, pageSize);
         }
+    }
+
+    private static Expression<Func<T, bool>> Combine<T>(
+        Expression<Func<T, bool>>? left,
+        Expression<Func<T, bool>> right)
+    {
+        if (left is null) return right;
+        var param     = Expression.Parameter(typeof(T));
+        var leftBody  = Expression.Invoke(left,  param);
+        var rightBody = Expression.Invoke(right, param);
+        return Expression.Lambda<Func<T, bool>>(Expression.AndAlso(leftBody, rightBody), param);
     }
 }

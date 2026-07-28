@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using Azka.Domain.Entities;
 using Azka.Domain.Enums;
 
@@ -18,22 +19,38 @@ public class AssetQuerySpecification : BaseSpecification<Asset>
         int          pageSize     = 20,
         bool         countOnly    = false)
     {
+        Expression<Func<Asset, bool>>? predicate = null;
+
         if (assetType.HasValue)
-            AddCriteria(a => a.AssetType == assetType.Value);
+            predicate = Combine(predicate, a => a.AssetType == assetType.Value);
 
         if (status.HasValue)
-            AddCriteria(a => a.Status == status.Value);
+            predicate = Combine(predicate, a => a.Status == status.Value);
 
         if (!string.IsNullOrWhiteSpace(customerName))
-            AddCriteria(a => a.CustomerName.Contains(customerName));
+            predicate = Combine(predicate, a => a.CustomerName.Contains(customerName));
 
         if (!string.IsNullOrWhiteSpace(assetNumber))
-            AddCriteria(a => a.AssetNumber.Contains(assetNumber));
+            predicate = Combine(predicate, a => a.AssetNumber.Contains(assetNumber));
+
+        if (predicate is not null)
+            AddCriteria(predicate);
 
         if (!countOnly)
         {
             ApplyOrderBy(a => a.AssetNumber);
             ApplyPaging((page - 1) * pageSize, pageSize);
         }
+    }
+
+    private static Expression<Func<T, bool>> Combine<T>(
+        Expression<Func<T, bool>>? left,
+        Expression<Func<T, bool>> right)
+    {
+        if (left is null) return right;
+        var param     = Expression.Parameter(typeof(T));
+        var leftBody  = Expression.Invoke(left,  param);
+        var rightBody = Expression.Invoke(right, param);
+        return Expression.Lambda<Func<T, bool>>(Expression.AndAlso(leftBody, rightBody), param);
     }
 }

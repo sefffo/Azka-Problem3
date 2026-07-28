@@ -51,14 +51,14 @@ public class EngineerService(
 
         var engineer = new Engineer
         {
-            EmployeeNumber    = dto.EmployeeNumber,
-            FullName          = dto.FullName,
-            Team              = dto.Team,
-            Region            = dto.Region,
-            Skills            = dto.Skills,
-            WorkingHours      = dto.WorkingHours,
+            EmployeeNumber     = dto.EmployeeNumber,
+            FullName           = dto.FullName,
+            Team               = dto.Team,
+            Region             = dto.Region,
+            Skills             = dto.Skills,
+            WorkingHours       = dto.WorkingHours,
             DailyCapacityHours = dto.DailyCapacityHours,
-            IsActive          = true
+            IsActive           = true
         };
 
         await unitOfWork.GetRepository<Engineer, int>().AddAsync(engineer);
@@ -72,13 +72,13 @@ public class EngineerService(
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
-        engineer.FullName          = dto.FullName;
-        engineer.Team              = dto.Team;
-        engineer.Region            = dto.Region;
-        engineer.Skills            = dto.Skills;
-        engineer.WorkingHours      = dto.WorkingHours;
+        engineer.FullName           = dto.FullName;
+        engineer.Team               = dto.Team;
+        engineer.Region             = dto.Region;
+        engineer.Skills             = dto.Skills;
+        engineer.WorkingHours       = dto.WorkingHours;
         engineer.DailyCapacityHours = dto.DailyCapacityHours;
-        engineer.IsActive          = dto.IsActive;
+        engineer.IsActive           = dto.IsActive;
 
         unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
@@ -103,12 +103,12 @@ public class EngineerService(
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
-        var workloadSpec     = new EngineerWorkloadSpecification(id, date);
+        var workloadSpec      = new EngineerWorkloadSpecification(id, date);
         var activeAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(workloadSpec);
 
-        var totalHours   = activeAssignments.Sum(a => a.WorkOrder.EstimatedHours);
-        var remaining    = Math.Max(0, engineer.DailyCapacityHours - totalHours);
-        var utilization  = engineer.DailyCapacityHours > 0
+        var totalHours  = activeAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+        var remaining   = Math.Max(0, engineer.DailyCapacityHours - totalHours);
+        var utilization = engineer.DailyCapacityHours > 0
             ? (totalHours / engineer.DailyCapacityHours) * 100 : 0;
 
         return ApiResponse<EngineerWorkloadDto>.Success(new EngineerWorkloadDto
@@ -126,14 +126,14 @@ public class EngineerService(
 
     private static EngineerDto MapToDto(Engineer e) => new()
     {
-        Id                = e.Id,
-        EmployeeNumber    = e.EmployeeNumber,
-        FullName          = e.FullName,
-        Team              = e.Team,
-        Region            = e.Region,
-        Skills            = e.Skills,
-        WorkingHours      = e.WorkingHours,
+        Id                 = e.Id,
+        EmployeeNumber     = e.EmployeeNumber,
+        FullName           = e.FullName,
+        Team               = e.Team,
+        Region             = e.Region,
+        Skills             = e.Skills,
+        WorkingHours       = e.WorkingHours,
         DailyCapacityHours = e.DailyCapacityHours,
-        IsActive          = e.IsActive
+        IsActive           = e.IsActive
     };
 }
