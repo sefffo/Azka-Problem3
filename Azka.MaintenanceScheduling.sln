@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -16,6 +16,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Azka.Shared", "Azka.Shared\Azka.Shared.csproj", "{F6A7B8C9-D0E1-2345-F012-456789012345}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Azka.Web", "Azka.Web\Azka.Web.csproj", "{A7B8C9D0-E1F2-3456-0123-567890123456}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Azka.Tests", "Azka.Tests\Azka.Tests.csproj", "{FBB3610F-B975-4B33-82D4-05F10F4B5716}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -51,5 +53,9 @@ Global
 		{A7B8C9D0-E1F2-3456-0123-567890123456}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A7B8C9D0-E1F2-3456-0123-567890123456}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A7B8C9D0-E1F2-3456-0123-567890123456}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FBB3610F-B975-4B33-82D4-05F10F4B5716}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FBB3610F-B975-4B33-82D4-05F10F4B5716}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FBB3610F-B975-4B33-82D4-05F10F4B5716}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FBB3610F-B975-4B33-82D4-05F10F4B5716}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
