@@ -53,6 +53,7 @@ public class EngineerService(
         {
             EmployeeNumber     = dto.EmployeeNumber,
             FullName           = dto.FullName,
+            Email              = dto.Email,
             Team               = dto.Team,
             Region             = dto.Region,
             Skills             = dto.Skills,
@@ -72,13 +73,14 @@ public class EngineerService(
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
-        engineer.FullName          = dto.FullName;
-        engineer.Team              = dto.Team;
-        engineer.Region            = dto.Region;
-        engineer.Skills            = dto.Skills;
-        engineer.WorkingHours      = dto.WorkingHours;
+        engineer.FullName           = dto.FullName;
+        engineer.Email              = dto.Email;
+        engineer.Team               = dto.Team;
+        engineer.Region             = dto.Region;
+        engineer.Skills             = dto.Skills;
+        engineer.WorkingHours       = dto.WorkingHours;
         engineer.DailyCapacityHours = dto.DailyCapacityHours;
-        engineer.IsActive          = dto.IsActive;
+        engineer.IsActive           = dto.IsActive;
 
         unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
@@ -129,6 +131,7 @@ public class EngineerService(
         Id                 = e.Id,
         EmployeeNumber     = e.EmployeeNumber,
         FullName           = e.FullName,
+        Email              = e.Email,
         Team               = e.Team,
         Region             = e.Region,
         Skills             = e.Skills,
