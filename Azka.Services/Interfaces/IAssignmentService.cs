@@ -7,7 +7,8 @@ public interface IAssignmentService
 {
     Task<ApiResponse<PagedResult<AssignmentDto>>> GetAllAsync(AssignmentQueryDto query);
     Task<ApiResponse<AssignmentDto>>              GetByIdAsync(int id);
-    Task<ApiResponse<AssignmentDto>>              CreateAsync(CreateAssignmentDto dto);
+    Task<ApiResponse<AssignmentDto>>              CreateAsync(CreateAssignmentDto dto, string assignedBy);
+    Task<ApiResponse<AssignmentDto>>              RescheduleAsync(int id, RescheduleAssignmentDto dto, string changedBy);
     Task<ApiResponse<AssignmentDto>>              UpdateStatusAsync(int id, UpdateAssignmentStatusDto dto);
-    Task<ApiResponse<bool>>                       DeleteAsync(int id);
+    Task<ApiResponse<bool>>                       CancelAsync(int id, string cancelledBy);
 }
