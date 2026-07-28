@@ -25,8 +25,9 @@ public class WorkOrdersController(IWorkOrderService workOrderService) : Controll
     public async Task<IActionResult> GetById(int id)
         => Ok(await workOrderService.GetByIdAsync(id));
 
-    /// <summary>Create a new work order</summary>
+    /// <summary>Create a new work order (Admin or Dispatcher only)</summary>
     [HttpPost]
+    [Authorize(Roles = "Admin,Dispatcher")]
     public async Task<IActionResult> Create([FromBody] CreateWorkOrderDto dto)
     {
         var result = await workOrderService.CreateAsync(dto);
@@ -38,8 +39,9 @@ public class WorkOrdersController(IWorkOrderService workOrderService) : Controll
     public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateWorkOrderStatusDto dto)
         => Ok(await workOrderService.UpdateStatusAsync(id, dto));
 
-    /// <summary>Cancel a work order</summary>
+    /// <summary>Cancel a work order (Admin or Dispatcher only)</summary>
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin,Dispatcher")]
     public async Task<IActionResult> Cancel(int id)
         => Ok(await workOrderService.CancelAsync(id));
 }

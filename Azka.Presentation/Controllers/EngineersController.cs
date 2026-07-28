@@ -29,18 +29,18 @@ public class EngineersController(IEngineerService engineerService) : ControllerB
     public async Task<IActionResult> GetWorkload(int id, [FromQuery] DateTime date)
         => Ok(await engineerService.GetWorkloadAsync(id, date));
 
-    /// <summary>Create a new engineer (Admin only)</summary>
+    /// <summary>Create a new engineer (Admin or Dispatcher)</summary>
     [HttpPost]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Dispatcher")]
     public async Task<IActionResult> Create([FromBody] CreateEngineerDto dto)
     {
         var result = await engineerService.CreateAsync(dto);
         return CreatedAtAction(nameof(GetById), new { id = result.Data!.Id }, result);
     }
 
-    /// <summary>Update an existing engineer (Admin only)</summary>
+    /// <summary>Update an existing engineer (Admin or Dispatcher)</summary>
     [HttpPut("{id:int}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,Dispatcher")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateEngineerDto dto)
         => Ok(await engineerService.UpdateAsync(id, dto));
 
