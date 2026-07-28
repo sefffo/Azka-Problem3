@@ -32,7 +32,7 @@ public static class SpecificationEvaluator<T> where T : class
         else if (spec.OrderByDescending is not null)
             query = query.OrderByDescending(spec.OrderByDescending);
 
-        // 5. Apply pagination (always AFTER ordering)
+        // 5. Apply pagination (always AFTER ordering) 3shan el tartib hena hyfre2 m3aya lw el user hab yrateb
         if (spec.IsPagingEnabled)
             query = query.Skip(spec.Skip).Take(spec.Take);
 

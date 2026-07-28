@@ -61,7 +61,7 @@ public class AssetService(
             ?? throw new NotFoundException(nameof(Asset), id);
 
         var repo = unitOfWork.GetRepository<Asset, int>();
-        repo.Remove(asset);
+        repo.Delete(asset);
         await unitOfWork.SaveChangesAsync();
 
         return ApiResponse<bool>.Success(true, "Asset deleted successfully.");
