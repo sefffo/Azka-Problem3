@@ -5,6 +5,7 @@ using Azka.Persistence.DI;
 using Azka.Presentation.Controllers;
 using Azka.Services.DI;
 using Azka.Services.Implementation.DI;
+using Azka.Services.Implementation.Email;
 using Azka.Web.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
@@ -56,7 +57,11 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// ─── Application + Implementation Services ─────────────────────────────
+// ─── Email Settings ─────────────────────────────────────────────────────────
+builder.Services.Configure<EmailSettings>(
+    builder.Configuration.GetSection("EmailSettings"));
+
+// ─── Application + Implementation Services ─────────────────────────────────
 builder.Services.AddApplicationServices();
 builder.Services.AddServiceImplementations();
 
@@ -131,5 +136,3 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.Run();
-
-
