@@ -25,13 +25,13 @@ public class WorkOrderService(
         var repo = unitOfWork.GetRepository<WorkOrder, int>();
 
         var countSpec = new WorkOrderQuerySpecification(
-            q.WorkOrderNumber, q.AssetNumber, q.Status, q.Priority,
-            q.Region, q.EngineerName, q.FromDate, q.ToDate,
+            q.WorkOrderNumber, q.AssetNumber, q.CustomerName,
+            q.Status, q.Priority, q.FromDate, q.ToDate,
             countOnly: true);
 
         var dataSpec = new WorkOrderQuerySpecification(
-            q.WorkOrderNumber, q.AssetNumber, q.Status, q.Priority,
-            q.Region, q.EngineerName, q.FromDate, q.ToDate,
+            q.WorkOrderNumber, q.AssetNumber, q.CustomerName,
+            q.Status, q.Priority, q.FromDate, q.ToDate,
             q.Page, q.PageSize);
 
         var total = await repo.CountAsync(countSpec);
@@ -39,10 +39,10 @@ public class WorkOrderService(
 
         return ApiResponse<PagedResult<WorkOrderDto>>.Success(new PagedResult<WorkOrderDto>
         {
-            Items     = items.Select(MapToDto),
+            Items      = items.Select(MapToDto),
             TotalCount = total,
-            Page      = q.Page,
-            PageSize  = q.PageSize
+            Page       = q.Page,
+            PageSize   = q.PageSize
         });
     }
 

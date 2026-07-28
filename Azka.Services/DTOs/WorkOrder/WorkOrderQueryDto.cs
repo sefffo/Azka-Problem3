@@ -8,6 +8,8 @@ public class WorkOrderQueryDto
     public string?          WorkOrderNumber { get; set; }
     public string?          AssetNumber     { get; set; }
     public string?          CustomerName    { get; set; }
+    public string?          Region          { get; set; }
+    public string?          EngineerName    { get; set; }
     public WorkOrderStatus? Status          { get; set; }
     public Priority?        Priority        { get; set; }
     public DateTime?        FromDate        { get; set; }
