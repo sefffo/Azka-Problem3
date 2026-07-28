@@ -53,6 +53,7 @@ public class EngineerService(
         {
             EmployeeNumber     = dto.EmployeeNumber,
             FullName           = dto.FullName,
+            Email              = dto.Email,
             Team               = dto.Team,
             Region             = dto.Region,
             Skills             = dto.Skills,
@@ -73,6 +74,7 @@ public class EngineerService(
             ?? throw new NotFoundException(nameof(Engineer), id);
 
         engineer.FullName           = dto.FullName;
+        engineer.Email              = dto.Email;
         engineer.Team               = dto.Team;
         engineer.Region             = dto.Region;
         engineer.Skills             = dto.Skills;
@@ -129,6 +131,7 @@ public class EngineerService(
         Id                 = e.Id,
         EmployeeNumber     = e.EmployeeNumber,
         FullName           = e.FullName,
+        Email              = e.Email,
         Team               = e.Team,
         Region             = e.Region,
         Skills             = e.Skills,
