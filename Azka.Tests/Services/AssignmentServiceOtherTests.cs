@@ -6,6 +6,7 @@ using Azka.Domain.Specifications.Assignments;
 using Azka.Services.DTOs.Assignment;
 using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
+using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
 using Moq;
 
@@ -25,10 +26,10 @@ public class AssignmentServiceOtherTests
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(_workOrderRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
-        _service = new AssignmentService(_uow.Object);
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }
 
-    // ── GetByIdAsync ──────────────────────────────────────────────────────────
+    // ── GetByIdAsync ─────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetByIdAsync_WhenFound_ReturnsAssignment()
@@ -64,7 +65,7 @@ public class AssignmentServiceOtherTests
         await Assert.ThrowsAsync<NotFoundException>(() => _service.GetByIdAsync(999));
     }
 
-    // ── UpdateStatusAsync ─────────────────────────────────────────────────────
+    // ── UpdateStatusAsync ───────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task UpdateStatusAsync_WhenCompletedAssignment_ThrowsBadRequest()
@@ -126,7 +127,7 @@ public class AssignmentServiceOtherTests
         Assert.Equal(AssignmentStatus.Completed, assignment.Status);
     }
 
-    // ── CancelAsync ───────────────────────────────────────────────────────────
+    // ── CancelAsync ─────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task CancelAsync_WhenCompleted_ThrowsBadRequest()
@@ -148,6 +149,7 @@ public class AssignmentServiceOtherTests
             EngineerId = 1,
             Status = AssignmentStatus.Assigned,
             WorkOrder = workOrder,
+            Engineer = new Engineer { FullName = "Ahmed", Email = "" },
             ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
             ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
         };
@@ -171,7 +173,7 @@ public class AssignmentServiceOtherTests
         _uow.Verify(u => u.SaveChangesAsync(), Times.Once);
     }
 
-    // ── GetAllAsync ───────────────────────────────────────────────────────────
+    // ── GetAllAsync ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetAllAsync_ReturnsPagedResults()

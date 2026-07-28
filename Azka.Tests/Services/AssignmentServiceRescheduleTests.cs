@@ -6,6 +6,7 @@ using Azka.Domain.Specifications.Assignments;
 using Azka.Services.DTOs.Assignment;
 using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
+using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
 using Moq;
 
@@ -46,7 +47,7 @@ public class AssignmentServiceRescheduleTests
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
 
-        _service = new AssignmentService(_uow.Object);
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }
 
     [Fact]
