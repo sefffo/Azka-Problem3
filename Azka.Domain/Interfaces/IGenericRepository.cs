@@ -17,4 +17,5 @@ public interface IGenericRepository<TEntity, TKey>
     Task<TEntity?> GetBySpecAsync(ISpecification<TEntity> spec);
     Task<IReadOnlyList<TEntity>> ListAsync(ISpecification<TEntity> spec);
     Task<int> CountAsync(ISpecification<TEntity> spec);
+    Task<bool> AnyAsync(ISpecification<TEntity> spec);
 }
