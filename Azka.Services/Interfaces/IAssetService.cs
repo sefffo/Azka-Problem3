@@ -5,8 +5,8 @@ namespace Azka.Services.Interfaces;
 
 public interface IAssetService
 {
-    Task<ApiResponse<IEnumerable<AssetDto>>> GetAllAsync();
-    Task<ApiResponse<AssetDto>> GetByIdAsync(int id);
-    Task<ApiResponse<AssetDto>> CreateAsync(CreateAssetDto dto);
-    Task<ApiResponse<bool>> DeleteAsync(int id);
+    Task<ApiResponse<PagedResult<AssetDto>>> GetAllAsync(AssetQueryDto query);
+    Task<ApiResponse<AssetDto>>              GetByIdAsync(int id);
+    Task<ApiResponse<AssetDto>>              CreateAsync(CreateAssetDto dto);
+    Task<ApiResponse<bool>>                  DeleteAsync(int id);
 }
