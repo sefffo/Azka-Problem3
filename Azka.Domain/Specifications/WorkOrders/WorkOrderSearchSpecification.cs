@@ -7,16 +7,15 @@ namespace Azka.Domain.Specifications.WorkOrders;
 /// <summary>
 /// Composable specification for the Work Order search endpoint (FR 7).
 /// Every filter is optional — only non-null/non-empty values are applied.
-/// Handles: WorkOrderNumber, AssetNumber, Status, Priority, Region,
-///          EngineerName, FromDate, ToDate, and pagination.
 /// </summary>
 public class WorkOrderSearchSpecification : BaseSpecification<WorkOrder>
 {
+    // Paginated data query — includes, ordering, and pagination applied
     public WorkOrderSearchSpecification(
         string? workOrderNumber,
         string? assetNumber,
         WorkOrderStatus? status,
-        WorkOrderPriority? priority,
+        Priority? priority,
         string? region,
         string? engineerName,
         DateTime? fromDate,
@@ -24,31 +23,23 @@ public class WorkOrderSearchSpecification : BaseSpecification<WorkOrder>
         int page,
         int pageSize)
     {
-        // ── Includes ──────────────────────────────────────────────────────────
         AddInclude(w => w.Asset);
-        AddInclude("Assignments.Engineer");  // ThenInclude chain
+        AddInclude("Assignments.Engineer");
 
-        // ── Build combined filter predicate ───────────────────────────────────
         AddCriteria(BuildCriteria(
             workOrderNumber, assetNumber, status, priority,
             region, engineerName, fromDate, toDate));
 
-        // ── Ordering: Priority DESC then DueDate ASC ──────────────────────────
         ApplyOrderByDescending(w => (object)(int)w.Priority);
-
-        // ── Pagination ────────────────────────────────────────────────────────
         ApplyPaging((page - 1) * pageSize, pageSize);
     }
 
-    /// <summary>
-    /// Separate count query — same filters, no pagination, no includes.
-    /// Used to get the total before applying Skip/Take.
-    /// </summary>
+    // Count-only query — same filters, no pagination, no includes (fast)
     public WorkOrderSearchSpecification(
         string? workOrderNumber,
         string? assetNumber,
         WorkOrderStatus? status,
-        WorkOrderPriority? priority,
+        Priority? priority,
         string? region,
         string? engineerName,
         DateTime? fromDate,
@@ -63,7 +54,7 @@ public class WorkOrderSearchSpecification : BaseSpecification<WorkOrder>
         string? workOrderNumber,
         string? assetNumber,
         WorkOrderStatus? status,
-        WorkOrderPriority? priority,
+        Priority? priority,
         string? region,
         string? engineerName,
         DateTime? fromDate,

@@ -9,7 +9,7 @@ namespace Azka.Domain.Specifications.WorkOrders;
 /// </summary>
 public class WorkOrderByPrioritySpecification : BaseSpecification<WorkOrder>
 {
-    public WorkOrderByPrioritySpecification(WorkOrderPriority priority)
+    public WorkOrderByPrioritySpecification(Priority priority)
     {
         AddInclude(w => w.Asset);
         AddCriteria(w => w.Priority == priority);
