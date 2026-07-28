@@ -37,6 +37,11 @@ public class AssignmentService(
         });
     }
 
+    public Task<ApiResponse<AssignmentDto>> GetByIdAsync(int id)
+    {
+        throw new NotImplementedException();
+    }
+
     public async Task<ApiResponse<AssignmentDto>> CreateAsync(CreateAssignmentDto dto, string assignedBy)
     {
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(dto.EngineerId)
