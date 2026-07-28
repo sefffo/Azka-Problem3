@@ -1,12 +1,12 @@
 using Azka.Domain.Entities;
-using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
+using Azka.Domain.Specifications.Assignments;
+using Azka.Domain.Specifications.Engineers;
 using Azka.Persistence.Data;
 using Azka.Services.DTOs.Engineer;
 using Azka.Services.Exceptions;
 using Azka.Services.Interfaces;
 using Azka.Shared.Common;
-using Microsoft.EntityFrameworkCore;
 
 namespace Azka.Services.Implementation;
 
@@ -16,29 +16,24 @@ public class EngineerService(
 {
     public async Task<ApiResponse<IEnumerable<EngineerDto>>> GetAllAsync()
     {
-        var engineers = await context.Engineers
-            .AsNoTracking()
-            .Where(e => e.IsActive)
-            .OrderBy(e => e.FullName)
-            .ToListAsync();
-
+        var spec = new ActiveEngineersSpecification();
+        var engineers = await unitOfWork.GetRepository<Engineer, int>().ListAsync(spec);
         return ApiResponse<IEnumerable<EngineerDto>>.Success(engineers.Select(MapToDto));
     }
 
     public async Task<ApiResponse<EngineerDto>> GetByIdAsync(int id)
     {
-        var engineer = await context.Engineers.FindAsync(id)
+        var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
-
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer));
     }
 
     public async Task<ApiResponse<EngineerDto>> CreateAsync(CreateEngineerDto dto)
     {
-        var exists = await context.Engineers
-            .AnyAsync(e => e.EmployeeNumber == dto.EmployeeNumber);
-
-        if (exists)
+        // Duplicate check via spec
+        var duplicateSpec = new EngineerDuplicateSpecification(dto.EmployeeNumber);
+        var count = await unitOfWork.GetRepository<Engineer, int>().CountAsync(duplicateSpec);
+        if (count > 0)
             throw new ConflictException($"Engineer with employee number '{dto.EmployeeNumber}' already exists.");
 
         var engineer = new Engineer
@@ -62,7 +57,7 @@ public class EngineerService(
 
     public async Task<ApiResponse<EngineerDto>> UpdateAsync(int id, UpdateEngineerDto dto)
     {
-        var engineer = await context.Engineers.FindAsync(id)
+        var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
         engineer.FullName = dto.FullName;
@@ -73,8 +68,7 @@ public class EngineerService(
         engineer.DailyCapacityHours = dto.DailyCapacityHours;
         engineer.IsActive = dto.IsActive;
 
-        var repo = unitOfWork.GetRepository<Engineer, int>();
-        repo.Update(engineer);
+        unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
 
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer), "Engineer updated successfully.");
@@ -82,13 +76,11 @@ public class EngineerService(
 
     public async Task<ApiResponse<bool>> DeleteAsync(int id)
     {
-        var engineer = await context.Engineers.FindAsync(id)
+        var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
-        // Soft delete
         engineer.IsActive = false;
-        var repo = unitOfWork.GetRepository<Engineer, int>();
-        repo.Update(engineer);
+        unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
 
         return ApiResponse<bool>.Success(true, "Engineer deactivated successfully.");
@@ -96,21 +88,11 @@ public class EngineerService(
 
     public async Task<ApiResponse<EngineerWorkloadDto>> GetWorkloadAsync(int id, DateTime date)
     {
-        var engineer = await context.Engineers.FindAsync(id)
+        var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
             ?? throw new NotFoundException(nameof(Engineer), id);
 
-        var dayStart = date.Date;
-        var dayEnd = dayStart.AddDays(1);
-
-        var activeAssignments = await context.Assignments
-            .AsNoTracking()
-            .Include(a => a.WorkOrder)
-            .Where(a => a.EngineerId == id
-                && a.ScheduledStart < dayEnd
-                && a.ScheduledEnd > dayStart
-                && a.Status != AssignmentStatus.Cancelled
-                && a.Status != AssignmentStatus.Failed)
-            .ToListAsync();
+        var workloadSpec = new EngineerWorkloadSpecification(id, date);
+        var activeAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(workloadSpec);
 
         var totalHours = activeAssignments.Sum(a => a.WorkOrder.EstimatedHours);
         var remaining = Math.Max(0, engineer.DailyCapacityHours - totalHours);
@@ -133,11 +115,8 @@ public class EngineerService(
 
     public async Task<ApiResponse<IEnumerable<EngineerDto>>> GetByRegionAsync(string region)
     {
-        var engineers = await context.Engineers
-            .AsNoTracking()
-            .Where(e => e.IsActive && e.Region.ToLower() == region.ToLower())
-            .ToListAsync();
-
+        var spec = new EngineerByRegionSpecification(region);
+        var engineers = await unitOfWork.GetRepository<Engineer, int>().ListAsync(spec);
         return ApiResponse<IEnumerable<EngineerDto>>.Success(engineers.Select(MapToDto));
     }
 
