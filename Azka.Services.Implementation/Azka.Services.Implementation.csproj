@@ -15,6 +15,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Azka.Domain\Azka.Domain.csproj" />
     <ProjectReference Include="..\Azka.Services\Azka.Services.csproj" />
+    <ProjectReference Include="..\Azka.Services.DTOs\Azka.Services.DTOs.csproj" />
+    <ProjectReference Include="..\Azka.Services.Interfaces\Azka.Services.Interfaces.csproj" />
     <ProjectReference Include="..\Azka.Persistence\Azka.Persistence.csproj" />
     <ProjectReference Include="..\Azka.Shared\Azka.Shared.csproj" />
   </ItemGroup>
