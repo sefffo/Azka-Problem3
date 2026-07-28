@@ -241,6 +241,10 @@ namespace Azka.Persistence.Migrations
                     b.Property<double>("DailyCapacityHours")
                         .HasColumnType("float");
 
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("EmployeeNumber")
                         .IsRequired()
                         .HasMaxLength(50)
