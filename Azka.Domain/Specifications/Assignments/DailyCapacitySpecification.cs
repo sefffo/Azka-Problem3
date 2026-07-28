@@ -17,8 +17,8 @@ public class DailyCapacitySpecification : BaseSpecification<Assignment>
         AddInclude(a => a.WorkOrder);
         AddCriteria(a =>
             a.EngineerId == engineerId &&
-            a.ScheduledStart >= dayStart &&
             a.ScheduledStart < dayEnd &&
+            a.ScheduledEnd > dayStart &&
             a.Status != AssignmentStatus.Cancelled &&
             a.Status != AssignmentStatus.Failed);
     }

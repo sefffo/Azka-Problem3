@@ -43,4 +43,9 @@ public class GenericRepository<TEntity, TKey>(
         => await SpecificationEvaluator<TEntity>
             .GetQuery(_dbSet.AsQueryable(), spec)
             .CountAsync();
+
+    public async Task<bool> AnyAsync(ISpecification<TEntity> spec)
+        => await SpecificationEvaluator<TEntity>
+            .GetQuery(_dbSet.AsQueryable(), spec)
+            .AnyAsync();
 }

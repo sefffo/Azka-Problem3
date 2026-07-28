@@ -8,6 +8,7 @@ using Azka.Services.Implementation.DI;
 using Azka.Web.Middlewares;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 
@@ -95,8 +96,22 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ─── Seed Roles (runs once on startup) ─────────────────────────────────────
-await SeedRolesAsync(app);
+// ─── Migrate + Seed (runs once on startup) ─────────────────────────────────
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await context.Database.MigrateAsync();
+
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    string[] roles = ["Admin", "Dispatcher", "Engineer"];
+    foreach (var role in roles)
+    {
+        if (!await roleManager.RoleExistsAsync(role))
+            await roleManager.CreateAsync(new IdentityRole(role));
+    }
+
+    await DbSeeder.SeedAsync(context);
+}
 
 // ─── Middleware Pipeline ────────────────────────────────────────────────────
 app.UseMiddleware<ExceptionHandlerMiddleware>();
@@ -117,17 +132,4 @@ app.UseAuthorization();
 app.MapControllers();
 app.Run();
 
-// ─── Role Seeder ────────────────────────────────────────────────────────────
-static async Task SeedRolesAsync(WebApplication app)
-{
-    using var scope = app.Services.CreateScope();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
 
-    string[] roles = ["Admin", "Dispatcher", "Engineer"];
-
-    foreach (var role in roles)
-    {
-        if (!await roleManager.RoleExistsAsync(role))
-            await roleManager.CreateAsync(new IdentityRole(role));
-    }
-}

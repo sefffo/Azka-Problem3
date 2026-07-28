@@ -2,18 +2,15 @@ using Azka.Domain.Entities;
 using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
 using Azka.Domain.Specifications.Assignments;
-using Azka.Persistence.Data;
 using Azka.Services.DTOs.Assignment;
 using Azka.Services.Exceptions;
 using Azka.Services.Interfaces;
 using Azka.Shared.Common;
-using Microsoft.EntityFrameworkCore;
 
 namespace Azka.Services.Implementation;
 
 public class AssignmentService(
-    IUnitOfWork unitOfWork,
-    AppDbContext context) : IAssignmentService
+    IUnitOfWork unitOfWork) : IAssignmentService
 {
     public async Task<ApiResponse<PagedResult<AssignmentDto>>> GetAllAsync(AssignmentQueryDto q)
     {
@@ -37,9 +34,13 @@ public class AssignmentService(
         });
     }
 
-    public Task<ApiResponse<AssignmentDto>> GetByIdAsync(int id)
+    public async Task<ApiResponse<AssignmentDto>> GetByIdAsync(int id)
     {
-        throw new NotImplementedException();
+        var assignment = await unitOfWork.GetRepository<Assignment, int>()
+            .GetBySpecAsync(new AssignmentByIdSpecification(id))
+            ?? throw new NotFoundException(nameof(Assignment), id);
+
+        return ApiResponse<AssignmentDto>.Success(MapToDto(assignment));
     }
 
     public async Task<ApiResponse<AssignmentDto>> CreateAsync(CreateAssignmentDto dto, string assignedBy)
@@ -50,6 +51,8 @@ public class AssignmentService(
         if (!engineer.IsActive)
             throw new BadRequestException($"Engineer '{engineer.FullName}' is not active.");
 
+        ValidateWorkingHours(engineer.WorkingHours, dto.ScheduledStart, dto.ScheduledEnd, engineer.FullName);
+
         var workOrder = await unitOfWork.GetRepository<WorkOrder, int>().GetByIdAsync(dto.WorkOrderId)
             ?? throw new NotFoundException(nameof(WorkOrder), dto.WorkOrderId);
 
@@ -59,16 +62,10 @@ public class AssignmentService(
             throw new BadRequestException("Cannot assign a completed work order.");
 
         var conflictSpec = new AssignmentConflictSpecification(dto.EngineerId, dto.ScheduledStart, dto.ScheduledEnd);
-        if (await unitOfWork.GetRepository<Assignment, int>().CountAsync(conflictSpec) > 0)
+        if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
             throw new ConflictException($"Engineer '{engineer.FullName}' has an overlapping assignment during the requested time slot.");
 
-        var capacitySpec  = new DailyCapacitySpecification(dto.EngineerId, dto.ScheduledStart);
-        var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
-        var dailyHours    = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
-
-        if (dailyHours + workOrder.EstimatedHours > engineer.DailyCapacityHours)
-            throw new BadRequestException(
-                $"Assigning this work order would exceed engineer '{engineer.FullName}'s daily capacity of {engineer.DailyCapacityHours}h.");
+        await CheckDailyCapacity(dto.EngineerId, dto.ScheduledStart, dto.ScheduledEnd, workOrder.EstimatedHours, engineer);
 
         var assignment = new Assignment
         {
@@ -93,10 +90,8 @@ public class AssignmentService(
 
     public async Task<ApiResponse<AssignmentDto>> RescheduleAsync(int id, RescheduleAssignmentDto dto, string changedBy)
     {
-        var assignment = await context.Assignments
-            .Include(a => a.Engineer)
-            .Include(a => a.WorkOrder)
-            .FirstOrDefaultAsync(a => a.Id == id)
+        var assignment = await unitOfWork.GetRepository<Assignment, int>()
+            .GetBySpecAsync(new AssignmentByIdSpecification(id))
             ?? throw new NotFoundException(nameof(Assignment), id);
 
         if (assignment.Status == AssignmentStatus.Completed)
@@ -104,10 +99,15 @@ public class AssignmentService(
         if (assignment.Status == AssignmentStatus.Cancelled)
             throw new BadRequestException("Cancelled assignments cannot be rescheduled.");
 
+        ValidateWorkingHours(assignment.Engineer.WorkingHours, dto.NewScheduledStart, dto.NewScheduledEnd, assignment.Engineer.FullName);
+
         var conflictSpec = new AssignmentConflictSpecification(
             assignment.EngineerId, dto.NewScheduledStart, dto.NewScheduledEnd, excludeAssignmentId: id);
-        if (await unitOfWork.GetRepository<Assignment, int>().CountAsync(conflictSpec) > 0)
+        if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
             throw new ConflictException($"Engineer '{assignment.Engineer.FullName}' has a conflicting assignment during the new time slot.");
+
+        var newDurationHours = (dto.NewScheduledEnd - dto.NewScheduledStart).TotalHours;
+        await CheckDailyCapacity(assignment.EngineerId, dto.NewScheduledStart, dto.NewScheduledEnd, newDurationHours, assignment.Engineer);
 
         await unitOfWork.GetRepository<AssignmentHistory, int>().AddAsync(new AssignmentHistory
         {
@@ -131,10 +131,8 @@ public class AssignmentService(
 
     public async Task<ApiResponse<AssignmentDto>> UpdateStatusAsync(int id, UpdateAssignmentStatusDto dto)
     {
-        var assignment = await context.Assignments
-            .Include(a => a.Engineer)
-            .Include(a => a.WorkOrder)
-            .FirstOrDefaultAsync(a => a.Id == id)
+        var assignment = await unitOfWork.GetRepository<Assignment, int>()
+            .GetBySpecAsync(new AssignmentByIdSpecification(id))
             ?? throw new NotFoundException(nameof(Assignment), id);
 
         if (assignment.Status == AssignmentStatus.Completed)
@@ -156,9 +154,8 @@ public class AssignmentService(
 
     public async Task<ApiResponse<bool>> CancelAsync(int id, string cancelledBy)
     {
-        var assignment = await context.Assignments
-            .Include(a => a.WorkOrder)
-            .FirstOrDefaultAsync(a => a.Id == id)
+        var assignment = await unitOfWork.GetRepository<Assignment, int>()
+            .GetBySpecAsync(new AssignmentByIdSpecification(id))
             ?? throw new NotFoundException(nameof(Assignment), id);
 
         if (assignment.Status == AssignmentStatus.Completed)
@@ -182,6 +179,33 @@ public class AssignmentService(
         await unitOfWork.SaveChangesAsync();
 
         return ApiResponse<bool>.Success(true, "Assignment cancelled.");
+    }
+
+    private static void ValidateWorkingHours(string workingHours, DateTime start, DateTime end, string engineerName)
+    {
+        var parts = workingHours.Split('-');
+        if (parts.Length != 2 ||
+            !TimeOnly.TryParse(parts[0], out var startWh) ||
+            !TimeOnly.TryParse(parts[1], out var endWh))
+            return;
+
+        var startTime = TimeOnly.FromDateTime(start);
+        var endTime   = TimeOnly.FromDateTime(end);
+
+        if (startTime < startWh || endTime > endWh || endTime <= startWh)
+            throw new BadRequestException(
+                $"Scheduled time {startTime}-{endTime} falls outside engineer '{engineerName}'s working hours ({workingHours}).");
+    }
+
+    private async Task CheckDailyCapacity(int engineerId, DateTime scheduledStart, DateTime scheduledEnd, double newHours, Engineer engineer)
+    {
+        var capacitySpec  = new DailyCapacitySpecification(engineerId, scheduledStart);
+        var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
+        var existingHours  = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+
+        if (existingHours + newHours > engineer.DailyCapacityHours)
+            throw new BadRequestException(
+                $"Assigning this work order would exceed engineer '{engineer.FullName}'s daily capacity of {engineer.DailyCapacityHours}h.");
     }
 
     private static AssignmentDto MapToDto(Assignment a) => new()
