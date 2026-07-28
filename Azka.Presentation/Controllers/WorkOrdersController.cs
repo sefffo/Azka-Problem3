@@ -1,4 +1,3 @@
-using Azka.Services.DTOs.Search;
 using Azka.Services.DTOs.WorkOrder;
 using Azka.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -11,20 +10,20 @@ namespace Azka.Presentation.Controllers;
 [Authorize]
 public class WorkOrdersController(IWorkOrderService workOrderService) : ControllerBase
 {
-    /// <summary>Get all work orders</summary>
+    /// <summary>
+    /// Get work orders. All query params are optional.
+    /// Omit everything → paginated list of all work orders.
+    /// Pass any combination of filters → scoped result.
+    /// Replaces the old GET /api/WorkOrders + GET /api/WorkOrders/search endpoints.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll()
-        => Ok(await workOrderService.GetAllAsync());
+    public async Task<IActionResult> GetAll([FromQuery] WorkOrderQueryDto query)
+        => Ok(await workOrderService.GetAllAsync(query));
 
-    /// <summary>Get work order by ID</summary>
+    /// <summary>Get a single work order by ID</summary>
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
         => Ok(await workOrderService.GetByIdAsync(id));
-
-    /// <summary>Search and filter work orders with pagination</summary>
-    [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] WorkOrderSearchDto searchDto)
-        => Ok(await workOrderService.SearchAsync(searchDto));
 
     /// <summary>Create a new work order</summary>
     [HttpPost]

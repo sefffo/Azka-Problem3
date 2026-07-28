@@ -15,6 +15,28 @@ public class AssignmentService(
     IUnitOfWork unitOfWork,
     AppDbContext context) : IAssignmentService
 {
+    public async Task<ApiResponse<PagedResult<AssignmentDto>>> GetAllAsync(AssignmentQueryDto q)
+    {
+        var repo = unitOfWork.GetRepository<Assignment, int>();
+
+        var countSpec = new AssignmentQuerySpecification(
+            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate, countOnly: true);
+
+        var dataSpec = new AssignmentQuerySpecification(
+            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate, q.Page, q.PageSize);
+
+        var total = await repo.CountAsync(countSpec);
+        var items = await repo.ListAsync(dataSpec);
+
+        return ApiResponse<PagedResult<AssignmentDto>>.Success(new PagedResult<AssignmentDto>
+        {
+            Items      = items.Select(MapToDto),
+            TotalCount = total,
+            Page       = q.Page,
+            PageSize   = q.PageSize
+        });
+    }
+
     public async Task<ApiResponse<AssignmentDto>> CreateAsync(CreateAssignmentDto dto, string assignedBy)
     {
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(dto.EngineerId)
@@ -31,21 +53,18 @@ public class AssignmentService(
         if (workOrder.Status == WorkOrderStatus.Completed)
             throw new BadRequestException("Cannot assign a completed work order.");
 
-        // ─── FR 5: Conflict detection via spec ──────────────────────────────────
         var conflictSpec = new AssignmentConflictSpecification(dto.EngineerId, dto.ScheduledStart, dto.ScheduledEnd);
         if (await unitOfWork.GetRepository<Assignment, int>().CountAsync(conflictSpec) > 0)
             throw new ConflictException($"Engineer '{engineer.FullName}' has an overlapping assignment during the requested time slot.");
 
-        // ─── Daily capacity check via spec ──────────────────────────────────
-        var capacitySpec = new DailyCapacitySpecification(dto.EngineerId, dto.ScheduledStart);
+        var capacitySpec  = new DailyCapacitySpecification(dto.EngineerId, dto.ScheduledStart);
         var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
-        var dailyHours = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+        var dailyHours    = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
 
         if (dailyHours + workOrder.EstimatedHours > engineer.DailyCapacityHours)
             throw new BadRequestException(
                 $"Assigning this work order would exceed engineer '{engineer.FullName}'s daily capacity of {engineer.DailyCapacityHours}h.");
 
-        // ─── Create ──────────────────────────────────────────────────────────
         var assignment = new Assignment
         {
             WorkOrderId    = dto.WorkOrderId,
@@ -80,13 +99,11 @@ public class AssignmentService(
         if (assignment.Status == AssignmentStatus.Cancelled)
             throw new BadRequestException("Cancelled assignments cannot be rescheduled.");
 
-        // ─── FR 6: Conflict check excluding self via spec ──────────────────────
         var conflictSpec = new AssignmentConflictSpecification(
             assignment.EngineerId, dto.NewScheduledStart, dto.NewScheduledEnd, excludeAssignmentId: id);
         if (await unitOfWork.GetRepository<Assignment, int>().CountAsync(conflictSpec) > 0)
             throw new ConflictException($"Engineer '{assignment.Engineer.FullName}' has a conflicting assignment during the new time slot.");
 
-        // ─── Write history before mutation ──────────────────────────────────
         await unitOfWork.GetRepository<AssignmentHistory, int>().AddAsync(new AssignmentHistory
         {
             AssignmentId   = assignment.Id,
@@ -132,20 +149,6 @@ public class AssignmentService(
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment), "Status updated.");
     }
 
-    public async Task<ApiResponse<IEnumerable<AssignmentDto>>> GetByEngineerAsync(int engineerId)
-    {
-        var spec = new AssignmentsByEngineerSpecification(engineerId);
-        var assignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(spec);
-        return ApiResponse<IEnumerable<AssignmentDto>>.Success(assignments.Select(MapToDto));
-    }
-
-    public async Task<ApiResponse<IEnumerable<AssignmentDto>>> GetByWorkOrderAsync(int workOrderId)
-    {
-        var spec = new AssignmentsByWorkOrderSpecification(workOrderId);
-        var assignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(spec);
-        return ApiResponse<IEnumerable<AssignmentDto>>.Success(assignments.Select(MapToDto));
-    }
-
     public async Task<ApiResponse<bool>> CancelAsync(int id, string cancelledBy)
     {
         var assignment = await context.Assignments
@@ -166,9 +169,9 @@ public class AssignmentService(
             ChangeReason   = "Cancelled"
         });
 
-        assignment.Status            = AssignmentStatus.Cancelled;
-        assignment.UpdatedAt         = DateTime.UtcNow;
-        assignment.WorkOrder.Status  = WorkOrderStatus.PendingAssignment;
+        assignment.Status           = AssignmentStatus.Cancelled;
+        assignment.UpdatedAt        = DateTime.UtcNow;
+        assignment.WorkOrder.Status = WorkOrderStatus.PendingAssignment;
 
         unitOfWork.GetRepository<Assignment, int>().Update(assignment);
         await unitOfWork.SaveChangesAsync();

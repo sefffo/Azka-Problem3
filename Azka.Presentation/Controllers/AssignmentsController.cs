@@ -13,17 +13,15 @@ public class AssignmentsController(IAssignmentService assignmentService) : Contr
 {
     private string CurrentUser => User.FindFirstValue(ClaimTypes.Name) ?? "System";
 
-    /// <summary>Get all assignments for a specific engineer</summary>
-    [HttpGet("engineer/{engineerId:int}")]
-    public async Task<IActionResult> GetByEngineer(int engineerId)
-        => Ok(await assignmentService.GetByEngineerAsync(engineerId));
+    /// <summary>
+    /// Get assignments. All query params are optional.
+    /// Filter by engineerId, workOrderId, status, fromDate, toDate or any combination.
+    /// </summary>
+    [HttpGet]
+    public async Task<IActionResult> GetAll([FromQuery] AssignmentQueryDto query)
+        => Ok(await assignmentService.GetAllAsync(query));
 
-    /// <summary>Get all assignments for a specific work order</summary>
-    [HttpGet("workorder/{workOrderId:int}")]
-    public async Task<IActionResult> GetByWorkOrder(int workOrderId)
-        => Ok(await assignmentService.GetByWorkOrderAsync(workOrderId));
-
-    /// <summary>Assign a work order to an engineer (with conflict detection)</summary>
+    /// <summary>Assign a work order to an engineer (with conflict and capacity checks)</summary>
     [HttpPost]
     [Authorize(Roles = "Admin,Dispatcher")]
     public async Task<IActionResult> Create([FromBody] CreateAssignmentDto dto)

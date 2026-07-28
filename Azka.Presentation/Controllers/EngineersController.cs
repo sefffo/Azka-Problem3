@@ -10,20 +10,19 @@ namespace Azka.Presentation.Controllers;
 [Authorize]
 public class EngineersController(IEngineerService engineerService) : ControllerBase
 {
-    /// <summary>Get all active engineers</summary>
+    /// <summary>
+    /// Get engineers. All query params are optional.
+    /// Defaults: isActive=true, page=1, pageSize=20.
+    /// Pass region/team/workingHours to narrow the result.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll()
-        => Ok(await engineerService.GetAllAsync());
+    public async Task<IActionResult> GetAll([FromQuery] EngineerQueryDto query)
+        => Ok(await engineerService.GetAllAsync(query));
 
-    /// <summary>Get engineer by ID</summary>
+    /// <summary>Get a single engineer by ID</summary>
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
         => Ok(await engineerService.GetByIdAsync(id));
-
-    /// <summary>Get engineers by region</summary>
-    [HttpGet("region/{region}")]
-    public async Task<IActionResult> GetByRegion(string region)
-        => Ok(await engineerService.GetByRegionAsync(region));
 
     /// <summary>Get engineer workload for a specific date</summary>
     [HttpGet("{id:int}/workload")]

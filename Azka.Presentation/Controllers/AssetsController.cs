@@ -10,12 +10,15 @@ namespace Azka.Presentation.Controllers;
 [Authorize]
 public class AssetsController(IAssetService assetService) : ControllerBase
 {
-    /// <summary>Get all assets</summary>
+    /// <summary>
+    /// Get assets. All query params are optional.
+    /// Pass assetType / status / customerName / assetNumber to filter.
+    /// </summary>
     [HttpGet]
-    public async Task<IActionResult> GetAll()
-        => Ok(await assetService.GetAllAsync());
+    public async Task<IActionResult> GetAll([FromQuery] AssetQueryDto query)
+        => Ok(await assetService.GetAllAsync(query));
 
-    /// <summary>Get asset by ID</summary>
+    /// <summary>Get a single asset by ID</summary>
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetById(int id)
         => Ok(await assetService.GetByIdAsync(id));
