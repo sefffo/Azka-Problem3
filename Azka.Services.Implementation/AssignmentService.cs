@@ -61,6 +61,8 @@ public class AssignmentService(
             throw new BadRequestException("Cannot assign a cancelled work order.");
         if (workOrder.Status == WorkOrderStatus.Completed)
             throw new BadRequestException("Cannot assign a completed work order.");
+        if (workOrder.Status == WorkOrderStatus.Assigned || workOrder.Status == WorkOrderStatus.InProgress)
+            throw new BadRequestException($"Work order '{workOrder.WorkOrderNumber}' is already assigned.");
 
         var conflictSpec = new AssignmentConflictSpecification(dto.EngineerId, dto.ScheduledStart, dto.ScheduledEnd);
         if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
@@ -102,6 +104,8 @@ public class AssignmentService(
             throw new BadRequestException("Cannot assign a cancelled work order.");
         if (workOrder.Status == WorkOrderStatus.Completed)
             throw new BadRequestException("Cannot assign a completed work order.");
+        if (workOrder.Status == WorkOrderStatus.Assigned || workOrder.Status == WorkOrderStatus.InProgress)
+            throw new BadRequestException($"Work order '{workOrder.WorkOrderNumber}' is already assigned.");
 
         var engineers = await unitOfWork.GetRepository<Engineer, int>()
             .ListAsync(new AvailableEngineersSpecification());

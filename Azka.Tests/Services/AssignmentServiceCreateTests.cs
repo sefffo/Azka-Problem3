@@ -86,6 +86,21 @@ public class AssignmentServiceCreateTests
     }
 
     [Fact]
+    public async Task CreateAsync_WhenWorkOrderAlreadyAssigned_ThrowsBadRequest()
+    {
+        _workOrder.Status = WorkOrderStatus.Assigned;
+        var dto = new CreateAssignmentDto
+        {
+            EngineerId = 1,
+            WorkOrderId = 1,
+            ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
+            ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
+        };
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => _service.CreateAsync(dto, "Dispatcher"));
+        Assert.Contains("already assigned", ex.Message);
+    }
+
+    [Fact]
     public async Task CreateAsync_WhenWorkOrderCancelled_ThrowsBadRequest()
     {
         _workOrder.Status = WorkOrderStatus.Cancelled;

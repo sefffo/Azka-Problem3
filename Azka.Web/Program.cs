@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Azka.Domain.Entities;
 using Azka.Persistence.Data;
 using Azka.Persistence.DI;
@@ -16,6 +17,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ─── Controllers (from Presentation layer) ──────────────────────────────────
 builder.Services.AddControllers()
+    .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .AddApplicationPart(typeof(AuthController).Assembly);
 
 // ─── Persistence (DbContext + UnitOfWork) ────────────────────────────────

@@ -167,6 +167,21 @@ public class EngineerAvailabilityTests
     }
 
     [Fact]
+    public async Task AutoAssignAsync_WhenWorkOrderAlreadyAssigned_ThrowsBadRequest()
+    {
+        var wo = new WorkOrder { Id = 1, WorkOrderNumber = "WO-001", Status = WorkOrderStatus.Assigned };
+        var woRepoMock = new Mock<IGenericRepository<WorkOrder, int>>();
+        woRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(wo);
+        var uow = new Mock<IUnitOfWork>();
+        uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
+        var svc = new AssignmentService(uow.Object);
+
+        var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0), ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0) };
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => svc.AutoAssignAsync(dto, "System"));
+        Assert.Contains("already assigned", ex.Message);
+    }
+
+    [Fact]
     public async Task AutoAssignAsync_WhenWorkOrderCancelled_ThrowsBadRequest()
     {
         var wo = new WorkOrder { Id = 1, Status = WorkOrderStatus.Cancelled };
