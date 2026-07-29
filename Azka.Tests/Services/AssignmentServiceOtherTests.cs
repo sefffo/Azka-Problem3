@@ -29,7 +29,7 @@ public class AssignmentServiceOtherTests
         _uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(_workOrderRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
-        _service = new AssignmentService(_uow.Object);
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
         _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }
 
