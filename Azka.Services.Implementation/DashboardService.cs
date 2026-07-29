@@ -11,6 +11,66 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Aggregates real-time operational KPIs for the dashboard.
+///
+/// ════════════════════════════════════════════════════════════
+///  GET DASHBOARD FLOW  (cached)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/Dashboard
+///       │
+///       ▼
+///  [DashboardController] ──► GetDashboardAsync()
+///       │
+///       ▼
+///  IMemoryCache.TryGetValue(CacheKeys.Dashboard)
+///       │
+///       ├─ [HIT] ──────────────────────────────────────────────────────────┐
+///       │                                                                   │
+///       ▼ [MISS]                                                            │
+///  BuildDashboardAsync()                                                    │
+///   │                                                                       │
+///   ├─ AppDbContext.Engineers                                               │
+///   │   .Include(Assignments where active today)                           │
+///   │   .ThenInclude(WorkOrder)                                             │
+///   │   .AsNoTracking().ToListAsync()        ← DB: Engineers + Assignments  │
+///   │                                             JOIN WorkOrders (1 query) │
+///   │                                                                       │
+///   ├─ WorkOrderRepository.CountAsync(All)   ← DB: WorkOrders COUNT        │
+///   ├─ WorkOrderRepository.CountAsync(Open)  ← DB: WorkOrders COUNT        │
+///   ├─ WorkOrderRepository.CountAsync(Assigned)                            │
+///   ├─ WorkOrderRepository.CountAsync(InProgress)                          │
+///   ├─ WorkOrderRepository.CountAsync(Completed)                           │
+///   ├─ WorkOrderRepository.CountAsync(Cancelled)                           │
+///   ├─ WorkOrderRepository.CountAsync(Overdue)                             │
+///   └─ WorkOrderRepository.CountAsync(Emergency)  ← 8 lightweight COUNT    │
+///       │                                            queries total          │
+///       ▼                                                                   │
+///  Build DashboardDto                                                       │
+///   ├─ EngineerSummary: total / available / busy / overloaded / inactive   │
+///   └─ WorkOrderSummary: all status counts + overdue + emergency           │
+///       │                                                                   │
+///  IMemoryCache.Set(Dashboard, dto, TTL=2min)                               │
+///       │                                                                   │
+///       └──────────────────────────────────────────────────────────────────┘
+///       │
+///       ▼
+///  HTTP 200 DashboardDto
+///
+/// ════════════════════════════════════════════════════════════
+///  INVALIDATE DASHBOARD  (called by other services on writes)
+/// ════════════════════════════════════════════════════════════
+///
+///  EngineerService / AssetService / AssignmentService
+///   └──► IDashboardService.InvalidateDashboard()
+///             │
+///             ▼
+///        IMemoryCache.Remove(CacheKeys.Dashboard)
+///             │
+///             ▼
+///        Next GET /api/Dashboard will trigger a full DB rebuild
+/// </summary>
 public class DashboardService(
     IUnitOfWork unitOfWork,
     AppDbContext context,
@@ -48,8 +108,6 @@ public class DashboardService(
         var today    = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
 
-        // Filtered Include (today's active assignments only) — kept as EF
-        // query because BaseSpecification doesn't support filtered collections.
         var engineers = await context.Engineers
             .AsNoTracking()
             .Include(e => e.Assignments.Where(a =>

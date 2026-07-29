@@ -11,6 +11,167 @@ using Azka.Shared.Common;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Core scheduling service — handles manual assignment, auto-assignment,
+/// rescheduling, status transitions, and cancellation.
+///
+/// ════════════════════════════════════════════════════════════
+///  CREATE ASSIGNMENT FLOW  (manual)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Assignments  [Admin, Dispatcher]
+///       │
+///       ▼
+///  [AssignmentsController] ──► CreateAsync(CreateAssignmentDto, assignedBy)
+///       │
+///       ▼
+///  EngineerRepository.GetByIdAsync(engineerId)   ← DB: Engineers SELECT
+///       ├─ [not found]    ──► NotFoundException 404
+///       ├─ [not active]   ──► BadRequestException 400
+///       │
+///  ValidateWorkingHours()  (pure parse — no DB)
+///       ├─ [outside shift] ──► BadRequestException 400
+///       │
+///  WorkOrderRepository.GetByIdAsync(workOrderId) ← DB: WorkOrders SELECT
+///       ├─ [not found]    ──► NotFoundException 404
+///       ├─ [Cancelled / Completed / already Assigned] ──► BadRequestException 400
+///       │
+///  AssignmentConflictSpecification(engineerId, start, end)
+///  AssignmentRepository.AnyAsync()               ← DB: Assignments (overlap check)
+///       ├─ [conflict] ──► ConflictException 409
+///       │
+///  CheckDailyCapacity()
+///   DailyCapacitySpecification(engineerId, start.Date)
+///   AssignmentRepository.ListAsync()             ← DB: Assignments + WorkOrders
+///       ├─ [over capacity] ──► BadRequestException 400
+///       │
+///       ▼
+///  BEGIN TRANSACTION
+///   ├─ AssignmentRepository.AddAsync(assignment) → DB: Assignments INSERT
+///   ├─ workOrder.Status = Assigned
+///   │   WorkOrderRepository.Update()             → DB: WorkOrders UPDATE
+///   └─ UnitOfWork.SaveChangesAsync()
+///  COMMIT TRANSACTION
+///       │
+///       ▼
+///  BackgroundEmailQueue.EnqueueAsync()  (fire-and-forget notification to engineer)
+///       │
+///       ▼
+///  HTTP 200 AssignmentDto
+///
+/// ════════════════════════════════════════════════════════════
+///  AUTO-ASSIGN FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Assignments/auto-assign  [Admin, Dispatcher]
+///       │
+///       ▼
+///  WorkOrderRepository.GetByIdAsync()            ← DB: WorkOrders SELECT
+///       ├─ [invalid status] ──► BadRequestException 400
+///       │
+///  AvailableEngineersSpecification()
+///  EngineerRepository.ListAsync()                ← DB: Engineers SELECT (active)
+///       │
+///       ▼
+///  For each engineer:
+///   ├─ IsWithinWorkingHours()?                    (no DB)
+///   │   └─ [NO] skip
+///   ├─ AssignmentConflictSpec → AnyAsync()        ← DB: Assignments (per engineer)
+///   │   └─ [conflict] skip
+///   ├─ DailyCapacitySpec → ListAsync()            ← DB: Assignments + WorkOrders
+///   │   currentLoad = SUM(EstimatedHours)
+///   │   └─ [over capacity] skip
+///   └─ Track engineer with lowest load → bestEngineer
+///       │
+///       ├─ [no bestEngineer] ──► ServiceUnavailableException 503
+///       │
+///       ▼
+///  BEGIN TRANSACTION
+///   ├─ AssignmentRepository.AddAsync()           → DB: Assignments INSERT
+///   ├─ workOrder.Status = Assigned
+///   │   WorkOrderRepository.Update()             → DB: WorkOrders UPDATE
+///   └─ UnitOfWork.SaveChangesAsync()
+///  COMMIT TRANSACTION
+///       │
+///       ▼
+///  HTTP 200 AssignmentDto  (includes chosen engineer info)
+///
+/// ════════════════════════════════════════════════════════════
+///  RESCHEDULE FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP PUT /api/Assignments/{id}/reschedule  [Admin, Dispatcher]
+///       │
+///       ▼
+///  AssignmentByIdSpecification(id)
+///  AssignmentRepository.GetBySpecAsync()         ← DB: Assignments + Engineer + WorkOrder
+///       ├─ [not found] ──► NotFoundException 404
+///       ├─ [Completed / Cancelled] ──► BadRequestException 400
+///       │
+///  ValidateWorkingHours()  (no DB)
+///  AssignmentConflictSpec (excludeId=id) → AnyAsync()  ← DB: Assignments
+///       ├─ [conflict] ──► ConflictException 409
+///       │
+///  CheckDailyCapacity()                          ← DB: Assignments + WorkOrders
+///       ├─ [over capacity] ──► BadRequestException 400
+///       │
+///       ▼
+///  BEGIN TRANSACTION
+///   ├─ AssignmentHistoryRepository.AddAsync()    → DB: AssignmentHistory INSERT
+///   ├─ assignment.ScheduledStart/End = new times
+///   │   AssignmentRepository.Update()            → DB: Assignments UPDATE
+///   └─ UnitOfWork.SaveChangesAsync()
+///  COMMIT TRANSACTION
+///       │
+///       ▼
+///  BackgroundEmailQueue.EnqueueAsync()  (reschedule notification)
+///       │
+///       ▼
+///  HTTP 200 AssignmentDto
+///
+/// ════════════════════════════════════════════════════════════
+///  UPDATE STATUS FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP PATCH /api/Assignments/{id}/status  [Admin, Dispatcher, Engineer]
+///       │
+///       ▼
+///  AssignmentRepository.GetBySpecAsync()         ← DB: Assignments + Engineer + WorkOrder
+///       ├─ [Completed] ──► BadRequestException 400
+///       │
+///  assignment.Status = dto.Status
+///  Cascade WorkOrder.Status (InProgress → InProgress, Completed → Completed)
+///       │
+///  AssignmentHistoryRepository.AddAsync()        → DB: AssignmentHistory INSERT (audit)
+///  AssignmentRepository.Update()                 → DB: Assignments UPDATE
+///  UnitOfWork.SaveChangesAsync()
+///       │
+///  BackgroundEmailQueue.EnqueueAsync()  (if InProgress or Completed)
+///       │
+///       ▼
+///  HTTP 200 AssignmentDto
+///
+/// ════════════════════════════════════════════════════════════
+///  CANCEL ASSIGNMENT FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP DELETE /api/Assignments/{id}  [Admin, Dispatcher]
+///       │
+///       ▼
+///  AssignmentRepository.GetBySpecAsync()         ← DB: Assignments + Engineer + WorkOrder
+///       ├─ [Completed] ──► BadRequestException 400
+///       │
+///  AssignmentHistoryRepository.AddAsync()        → DB: AssignmentHistory INSERT (audit)
+///  assignment.Status = Cancelled
+///  workOrder.Status  = PendingAssignment          (released back to pool)
+///  AssignmentRepository.Update()
+///  UnitOfWork.SaveChangesAsync()                 → DB: Assignments + WorkOrders UPDATE
+///       │
+///  BackgroundEmailQueue.EnqueueAsync()  (cancellation notification)
+///       │
+///       ▼
+///  HTTP 200 { success: true }
+/// </summary>
 public class AssignmentService(
     IUnitOfWork unitOfWork,
     BackgroundEmailQueue emailQueue) : IAssignmentService

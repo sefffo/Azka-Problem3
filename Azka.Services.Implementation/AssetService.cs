@@ -9,12 +9,96 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Manages customer asset registration and lookup.
+///
+/// ════════════════════════════════════════════════════════════
+///  GET ALL ASSETS FLOW  (cached)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/Assets?assetType=&status=&customerName=&page=
+///       │
+///       ▼
+///  [AssetsController] ──► GetAllAsync(AssetQueryDto)
+///       │
+///       ▼
+///  IMemoryCache.TryGetValue(cacheKey)
+///       │
+///       ├─ [HIT] ──────────────────────────────────────────────────────────┐
+///       │                                                                   │
+///       ▼ [MISS]                                                            │
+///  AssetQuerySpecification (countOnly: true)                                │
+///  AssetRepository.CountAsync()            ← DB: Assets COUNT              │
+///       │                                                                   │
+///  AssetQuerySpecification (paged)                                          │
+///  AssetRepository.ListAsync()             ← DB: Assets SELECT + filters   │
+///       │                                                                   │
+///  Build PagedResult&lt;AssetDto&gt;                                              │
+///       │                                                                   │
+///  IMemoryCache.Set(key, result, TTL=10min)                                 │
+///       │                                                                   │
+///       └──────────────────────────────────────────────────────────────────┘
+///       │
+///       ▼
+///  ApiResponse&lt;PagedResult&lt;AssetDto&gt;&gt;.Success
+///       │
+///       ▼
+///  HTTP 200 { items[], totalCount, page, pageSize }
+///
+/// ════════════════════════════════════════════════════════════
+///  CREATE ASSET FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Assets  [Admin only]
+///       │
+///       ▼
+///  [AssetsController] ──► CreateAsync(CreateAssetDto)
+///       │
+///       ▼
+///  AssetByNumberSpecification
+///  AssetRepository.CountAsync()            ← DB: Assets COUNT (duplicate check)
+///       │
+///       ├─ [duplicate] ──► ConflictException 409
+///       │
+///       ▼
+///  Build Asset entity
+///  AssetRepository.AddAsync()              → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: Assets INSERT
+///       │
+///       ▼
+///  InvalidateAssetCaches()
+///   ├─ IMemoryCache.Remove(AssetListPrefix tag)
+///   └─ IDashboardService.InvalidateDashboard()  (removes Dashboard cache key)
+///       │
+///       ▼
+///  HTTP 201 { asset }
+///
+/// ════════════════════════════════════════════════════════════
+///  DELETE ASSET FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP DELETE /api/Assets/{id}  [Admin only]
+///       │
+///       ▼
+///  AssetRepository.GetByIdAsync(id)        ← DB: Assets SELECT by PK
+///       │
+///       ├─ [not found] ──► NotFoundException 404
+///       │
+///       ▼
+///  AssetRepository.Delete(asset)           → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: Assets DELETE
+///       │
+///       ▼
+///  InvalidateAssetCaches()
+///       │
+///       ▼
+///  HTTP 200 { success: true }
+/// </summary>
 public class AssetService(
     IUnitOfWork unitOfWork,
     IMemoryCache cache,
     IDashboardService dashboardService) : IAssetService
 {
-    // Asset reference data is very stable — 10-minute TTL.
     private static readonly TimeSpan ListCacheTtl = TimeSpan.FromMinutes(10);
 
     // ── Reads ────────────────────────────────────────────────────────────────

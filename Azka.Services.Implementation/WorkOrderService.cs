@@ -11,15 +11,101 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Manages the full lifecycle of maintenance work orders.
+///
+/// ════════════════════════════════════════════════════════════
+///  GET ALL WORK ORDERS FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/WorkOrders?status=&priority=&fromDate=&page=
+///       │
+///       ▼
+///  [WorkOrdersController] ──► GetAllAsync(WorkOrderQueryDto)
+///       │
+///       ▼
+///  WorkOrderQuerySpecification (countOnly: true)
+///  WorkOrderRepository.CountAsync()        ← DB: WorkOrders COUNT
+///       │
+///  WorkOrderQuerySpecification (paged)
+///  WorkOrderRepository.ListAsync()         ← DB: WorkOrders SELECT + filters + JOIN Asset
+///       │
+///       ▼
+///  Build PagedResult&lt;WorkOrderDto&gt; (MapToDto per item)
+///       │
+///       ▼
+///  HTTP 200 { items[], totalCount, page, pageSize }
+///
+/// ════════════════════════════════════════════════════════════
+///  CREATE WORK ORDER FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/WorkOrders  [Admin, Dispatcher]
+///       │
+///       ▼
+///  [WorkOrdersController] ──► CreateAsync(CreateWorkOrderDto)
+///       │
+///       ▼
+///  AppDbContext.Assets.FindAsync(dto.AssetId)  ← DB: Assets SELECT by PK
+///       │
+///       ├─ [not found] ──► NotFoundException 404
+///       │
+///       ▼
+///  GenerateWorkOrderNumber(maintenanceType)
+///   └─ prefix (PM/CM/EM/IN/IS) + date + 6-char GUID fragment
+///       │
+///       ▼
+///  Build WorkOrder entity  { Status = Open }
+///  WorkOrderRepository.AddAsync()          → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: WorkOrders INSERT
+///       │
+///       ▼
+///  HTTP 201 { workOrder }
+///
+/// ════════════════════════════════════════════════════════════
+///  UPDATE STATUS FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP PATCH /api/WorkOrders/{id}/status
+///       │
+///       ▼
+///  AppDbContext.WorkOrders.Include(Asset).FirstOrDefaultAsync()  ← DB SELECT
+///       │
+///       ├─ [not found]  ──► NotFoundException 404
+///       ├─ [Completed]  ──► BadRequestException 400
+///       │
+///       ▼
+///  workOrder.Status = dto.Status
+///  WorkOrderRepository.Update()            → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: WorkOrders UPDATE
+///       │
+///       ▼
+///  HTTP 200 { workOrder }
+///
+/// ════════════════════════════════════════════════════════════
+///  CANCEL WORK ORDER FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP DELETE /api/WorkOrders/{id}  [Admin, Dispatcher]
+///       │
+///       ▼
+///  AppDbContext.WorkOrders.FindAsync(id)   ← DB: WorkOrders SELECT by PK
+///       │
+///       ├─ [not found]  ──► NotFoundException 404
+///       ├─ [Completed]  ──► BadRequestException 400
+///       │
+///       ▼
+///  workOrder.Status = Cancelled
+///  WorkOrderRepository.Update()            → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: WorkOrders UPDATE
+///       │
+///       ▼
+///  HTTP 200 { success: true }
+/// </summary>
 public class WorkOrderService(
     IUnitOfWork unitOfWork,
     AppDbContext context) : IWorkOrderService
 {
-    /// <summary>
-    /// Single query entry point — the controller builds a WorkOrderQueryDto
-    /// and passes it in. No parameters = paginated list of everything.
-    /// Replaces the old GetAllAsync() + SearchAsync() split.
-    /// </summary>
     public async Task<ApiResponse<PagedResult<WorkOrderDto>>> GetAllAsync(WorkOrderQueryDto q)
     {
         var repo = unitOfWork.GetRepository<WorkOrder, int>();

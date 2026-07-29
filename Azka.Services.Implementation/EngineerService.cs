@@ -11,6 +11,136 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Manages engineer profiles, real-time workload, and availability checks.
+///
+/// ════════════════════════════════════════════════════════════
+///  GET ALL ENGINEERS FLOW  (cached)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/Engineers?region=&team=&isActive=&page=
+///       │
+///       ▼
+///  [EngineersController] ──► GetAllAsync(EngineerQueryDto)
+///       │
+///       ▼
+///  IMemoryCache.TryGetValue(cacheKey)
+///       │
+///       ├─ [HIT] ──────────────────────────────────────────────────────────┐
+///       │                                                                   │
+///       ▼ [MISS]                                                            │
+///  EngineerQuerySpecification (countOnly: true)                             │
+///  EngineerRepository.CountAsync()         ← DB: Engineers COUNT           │
+///       │                                                                   │
+///  EngineerQuerySpecification (paged)                                       │
+///  EngineerRepository.ListAsync()          ← DB: Engineers SELECT + filters│
+///       │                                                                   │
+///  Build PagedResult&lt;EngineerDto&gt;                                           │
+///       │                                                                   │
+///  IMemoryCache.Set(key, result, TTL=5min)                                  │
+///       │                                                                   │
+///       └──────────────────────────────────────────────────────────────────┘
+///       │
+///       ▼
+///  HTTP 200 { items[], totalCount, page, pageSize }
+///
+/// ════════════════════════════════════════════════════════════
+///  GET WORKLOAD FLOW  (real-time — never cached)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/Engineers/{id}/workload?date=2026-07-30
+///       │
+///       ▼
+///  EngineerRepository.GetByIdAsync(id)     ← DB: Engineers SELECT by PK
+///       │
+///       ├─ [not found] ──► NotFoundException 404
+///       │
+///       ▼
+///  EngineerWorkloadSpecification(id, date)
+///  AssignmentRepository.ListAsync()        ← DB: Assignments JOIN WorkOrders
+///       │
+///       ▼
+///  Compute: totalHours = SUM(EstimatedHours)
+///           remaining  = DailyCapacityHours − totalHours
+///           utilization% = (totalHours / DailyCapacityHours) * 100
+///       │
+///       ▼
+///  HTTP 200 EngineerWorkloadDto
+///
+/// ════════════════════════════════════════════════════════════
+///  GET AVAILABLE ENGINEERS FLOW  (real-time — never cached)
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP GET /api/Engineers/available?from=&to=&region=
+///       │
+///       ▼
+///  Validate: to > from  (else Failure 400)
+///       │
+///       ▼
+///  AvailableEngineersSpecification(region)
+///  EngineerRepository.ListAsync()          ← DB: Engineers SELECT (active only)
+///       │
+///       ▼
+///  For each engineer:
+///   ├─ IsWithinWorkingHours(from, to)?      (pure time-string parse — no DB)
+///   │   └─ [NO] skip
+///   ├─ AssignmentConflictSpecification(id, from, to)
+///   │   AssignmentRepository.AnyAsync()    ← DB: Assignments (conflict check)
+///   │   └─ [conflict] skip
+///   ├─ DailyCapacitySpecification(id, from.Date)
+///   │   AssignmentRepository.ListAsync()   ← DB: Assignments + WorkOrders
+///   │   currentLoad = SUM(EstimatedHours)
+///   │   └─ [currentLoad + duration > capacity] skip
+///   └─ append to available[]
+///       │
+///       ▼
+///  HTTP 200 IReadOnlyList&lt;EngineerAvailabilityDto&gt;
+///
+/// ════════════════════════════════════════════════════════════
+///  CREATE ENGINEER FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Engineers  [Admin, Dispatcher]
+///       │
+///       ▼
+///  EngineerDuplicateSpecification(employeeNumber)
+///  EngineerRepository.CountAsync()         ← DB: Engineers COUNT
+///       │
+///       ├─ [duplicate] ──► ConflictException 409
+///       │
+///       ▼
+///  Build Engineer entity  { IsActive = true }
+///  EngineerRepository.AddAsync()           → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: Engineers INSERT
+///       │
+///       ▼
+///  InvalidateEngineerCaches()
+///   ├─ MemoryCache.Compact(0)              (clears all engineer list keys)
+///   └─ IDashboardService.InvalidateDashboard()
+///       │
+///       ▼
+///  HTTP 201 { engineer }
+///
+/// ════════════════════════════════════════════════════════════
+///  UPDATE / DELETE (soft) FLOW  — same invalidation path
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP PUT /api/Engineers/{id}  or  DELETE /api/Engineers/{id}
+///       │
+///       ▼
+///  EngineerRepository.GetByIdAsync(id)     ← DB: Engineers SELECT by PK
+///       ├─ [not found] ──► NotFoundException 404
+///       ▼
+///  Mutate fields / set IsActive=false
+///  EngineerRepository.Update()             → DB: EF ChangeTracker (pending)
+///  UnitOfWork.SaveChangesAsync()           → DB: Engineers UPDATE
+///       │
+///       ▼
+///  InvalidateEngineerCaches()
+///       │
+///       ▼
+///  HTTP 200 { engineer | success:true }
+/// </summary>
 public class EngineerService(
     IUnitOfWork unitOfWork,
     IMemoryCache cache,

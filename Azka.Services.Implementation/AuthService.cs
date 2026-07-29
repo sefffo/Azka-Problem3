@@ -12,6 +12,73 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Azka.Services.Implementation;
 
+/// <summary>
+/// Handles user registration and login with JWT generation.
+///
+/// ════════════════════════════════════════════════════════════
+///  REGISTER FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Auth/register
+///       │
+///       ▼
+///  [AuthController] ──► RegisterAsync(RegisterDto)
+///       │
+///       ▼
+///  UserManager.FindByEmailAsync()          ← ASP.NET Identity (DB)
+///       │
+///       ├─ [email exists] ──► Failure("Email already registered")
+///       │
+///       ▼
+///  UserManager.CreateAsync(user, password) → DB: AspNetUsers INSERT
+///       │
+///       ├─ [identity errors] ──► Failure(errors)
+///       │
+///       ▼
+///  UserManager.AddToRoleAsync()            → DB: AspNetUserRoles INSERT
+///       │
+///       ▼
+///  BackgroundEmailQueue.EnqueueAsync()     (fire-and-forget welcome email)
+///       │
+///       ▼
+///  GenerateJwtToken()  ◄── reads JwtSettings from IConfiguration
+///       │
+///       ▼
+///  ApiResponse&lt;AuthResultDto&gt;.Success(token)
+///       │
+///       ▼
+///  HTTP 200 { token, email, fullName, role, expiresAt }
+///
+/// ════════════════════════════════════════════════════════════
+///  LOGIN FLOW
+/// ════════════════════════════════════════════════════════════
+///
+///  HTTP POST /api/Auth/login
+///       │
+///       ▼
+///  [AuthController] ──► LoginAsync(LoginDto)
+///       │
+///       ▼
+///  UserManager.FindByEmailAsync()          ← DB: AspNetUsers SELECT
+///       │
+///       ├─ [not found] ──► Failure("Invalid email or password")
+///       │
+///       ▼
+///  UserManager.CheckPasswordAsync()        (PBKDF2 hash compare — no extra DB hit)
+///       │
+///       ├─ [invalid] ──► Failure("Invalid email or password")
+///       │
+///       ▼
+///  GenerateJwtToken()
+///   ├─ Claims: sub, email, name, role, jti
+///   └─ Signs with HMAC-SHA256 SymmetricKey from config
+///       │
+///       ▼
+///  ApiResponse&lt;AuthResultDto&gt;.Success(token)
+///       │
+///       ▼
+///  HTTP 200 { token, email, fullName, role, expiresAt }
+/// </summary>
 public class AuthService(
     UserManager<ApplicationUser> userManager,
     IConfiguration configuration,
@@ -40,7 +107,6 @@ public class AuthService(
 
         await userManager.AddToRoleAsync(user, dto.Role);
 
-        // Enqueue a plain data record — no scoped service captured in closure
         await emailQueue.EnqueueAsync(new EmailJobDescriptor(
             To:      user.Email!,
             Subject: "Welcome to Azka — Account Created",
