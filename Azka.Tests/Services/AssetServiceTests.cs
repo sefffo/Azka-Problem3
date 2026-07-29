@@ -29,7 +29,7 @@ public class AssetServiceTests
         var assets = new List<Asset>
         {
             new() { Id = 1, AssetNumber = "A-001", CustomerName = "Acme", Address = "Cairo",
-                    InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.Substation }
+                    InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.SmartElectricityMeter }
         };
         _assetRepo.Setup(r => r.CountAsync(It.IsAny<ISpecification<Asset>>())).ReturnsAsync(1);
         _assetRepo.Setup(r => r.ListAsync(It.IsAny<ISpecification<Asset>>())).ReturnsAsync(assets);
@@ -60,7 +60,7 @@ public class AssetServiceTests
     public async Task GetByIdAsync_WhenFound_ReturnsAssetDto()
     {
         var asset = new Asset { Id = 1, AssetNumber = "A-001", CustomerName = "Acme", Address = "Cairo",
-                                InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.Substation };
+                                InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.SmartElectricityMeter };
         _assetRepo.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(asset);
 
         var result = await _service.GetByIdAsync(1);
@@ -84,7 +84,7 @@ public class AssetServiceTests
     {
         _assetRepo.Setup(r => r.CountAsync(It.IsAny<ISpecification<Asset>>())).ReturnsAsync(1);
 
-        var dto = new CreateAssetDto { AssetNumber = "A-001", AssetType = Domain.Enums.AssetType.Substation,
+        var dto = new CreateAssetDto { AssetNumber = "A-001", AssetType = Domain.Enums.AssetType.SmartElectricityMeter,
                                        Address = "Cairo", CustomerName = "Acme", InstallationDate = DateTime.UtcNow };
 
         await Assert.ThrowsAsync<ConflictException>(() => _service.CreateAsync(dto));
@@ -99,7 +99,7 @@ public class AssetServiceTests
             .Callback<Asset>(a => saved = a)
             .Returns(Task.CompletedTask);
 
-        var dto = new CreateAssetDto { AssetNumber = "A-002", AssetType = Domain.Enums.AssetType.Substation,
+        var dto = new CreateAssetDto { AssetNumber = "A-002", AssetType = Domain.Enums.AssetType.SmartWaterMeter,
                                        Address = "Alexandria", CustomerName = "Beta", InstallationDate = DateTime.UtcNow };
 
         var result = await _service.CreateAsync(dto);
@@ -119,7 +119,7 @@ public class AssetServiceTests
         var date = new DateTime(2024, 1, 15);
         var dto = new CreateAssetDto
         {
-            AssetNumber = "A-003", AssetType = Domain.Enums.AssetType.Substation,
+            AssetNumber = "A-003", AssetType = Domain.Enums.AssetType.SmartGasMeter,
             Address = "Giza", CustomerName = "Gamma", Latitude = 30.1, Longitude = 31.2,
             InstallationDate = date
         };
@@ -147,7 +147,7 @@ public class AssetServiceTests
     public async Task DeleteAsync_WhenFound_DeletesAndSaves()
     {
         var asset = new Asset { Id = 5, AssetNumber = "A-005", CustomerName = "Delta", Address = "Suez",
-                                InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.Substation };
+                                InstallationDate = DateTime.UtcNow, AssetType = Domain.Enums.AssetType.SmartElectricityMeter };
         _assetRepo.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(asset);
 
         var result = await _service.DeleteAsync(5);
