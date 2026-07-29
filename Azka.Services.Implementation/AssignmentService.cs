@@ -5,13 +5,15 @@ using Azka.Domain.Specifications.Assignments;
 using Azka.Domain.Specifications.Engineers;
 using Azka.Services.DTOs.Assignment;
 using Azka.Services.Exceptions;
+using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
 using Azka.Shared.Common;
 
 namespace Azka.Services.Implementation;
 
 public class AssignmentService(
-    IUnitOfWork unitOfWork) : IAssignmentService
+    IUnitOfWork unitOfWork,
+    BackgroundEmailQueue emailQueue) : IAssignmentService
 {
     public async Task<ApiResponse<PagedResult<AssignmentDto>>> GetAllAsync(AssignmentQueryDto q)
     {
@@ -92,6 +94,24 @@ public class AssignmentService(
 
         assignment.Engineer  = engineer;
         assignment.WorkOrder = workOrder;
+
+        if (!string.IsNullOrWhiteSpace(engineer.Email))
+            await emailQueue.EnqueueAsync(new EmailJobDescriptor(
+                To:      engineer.Email,
+                Subject: $"New Assignment — Work Order {workOrder.WorkOrderNumber}",
+                Body:    $"""
+                         <h2>Hello {engineer.FullName},</h2>
+                         <p>You have been assigned to <strong>Work Order {workOrder.WorkOrderNumber}</strong>.</p>
+                         <ul>
+                             <li><strong>Scheduled Start:</strong> {dto.ScheduledStart:f}</li>
+                             <li><strong>Scheduled End:</strong> {dto.ScheduledEnd:f}</li>
+                             <li><strong>Assigned by:</strong> {assignedBy}</li>
+                         </ul>
+                         <p>Please log in to the system for full details.</p>
+                         <br/>
+                         <p style="color:#888;font-size:12px;">Automated message from the Azka system.</p>
+                         """));
+
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment), "Assignment created successfully.");
     }
 
@@ -201,6 +221,8 @@ public class AssignmentService(
         await CheckDailyCapacity(assignment.EngineerId, dto.NewScheduledStart, dto.NewScheduledEnd, newDurationHours, assignment.Engineer);
 
         await using var tx = await unitOfWork.BeginTransactionAsync();
+        var oldStart = assignment.ScheduledStart;
+        var oldEnd   = assignment.ScheduledEnd;
 
         await unitOfWork.GetRepository<AssignmentHistory, int>().AddAsync(new AssignmentHistory
         {
@@ -220,6 +242,24 @@ public class AssignmentService(
         await unitOfWork.SaveChangesAsync();
 
         await tx.CommitAsync();
+        if (!string.IsNullOrWhiteSpace(assignment.Engineer.Email))
+            await emailQueue.EnqueueAsync(new EmailJobDescriptor(
+                To:      assignment.Engineer.Email,
+                Subject: $"Assignment Rescheduled — Work Order {assignment.WorkOrder.WorkOrderNumber}",
+                Body:    $"""
+                         <h2>Hello {assignment.Engineer.FullName},</h2>
+                         <p>Your assignment for <strong>Work Order {assignment.WorkOrder.WorkOrderNumber}</strong> has been rescheduled.</p>
+                         <table>
+                             <tr><td><strong>Previous Start:</strong></td><td>{oldStart:f}</td></tr>
+                             <tr><td><strong>Previous End:</strong></td><td>{oldEnd:f}</td></tr>
+                             <tr><td><strong>New Start:</strong></td><td>{dto.NewScheduledStart:f}</td></tr>
+                             <tr><td><strong>New End:</strong></td><td>{dto.NewScheduledEnd:f}</td></tr>
+                             <tr><td><strong>Reason:</strong></td><td>{dto.ChangeReason}</td></tr>
+                             <tr><td><strong>Changed by:</strong></td><td>{changedBy}</td></tr>
+                         </table>
+                         <br/>
+                         <p style="color:#888;font-size:12px;">Automated message from the Azka system.</p>
+                         """));
 
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment), "Assignment rescheduled successfully.");
     }
@@ -256,6 +296,19 @@ public class AssignmentService(
         unitOfWork.GetRepository<Assignment, int>().Update(assignment);
         await unitOfWork.SaveChangesAsync();
 
+        if (!string.IsNullOrWhiteSpace(assignment.Engineer.Email)
+            && dto.Status is AssignmentStatus.InProgress or AssignmentStatus.Completed)
+            await emailQueue.EnqueueAsync(new EmailJobDescriptor(
+                To:      assignment.Engineer.Email,
+                Subject: $"Assignment Status Updated — Work Order {assignment.WorkOrder.WorkOrderNumber}",
+                Body:    $"""
+                         <h2>Hello {assignment.Engineer.FullName},</h2>
+                         <p>The status of your assignment for <strong>Work Order {assignment.WorkOrder.WorkOrderNumber}</strong>
+                         has been updated to <strong>{dto.Status}</strong>.</p>
+                         <br/>
+                         <p style="color:#888;font-size:12px;">Automated message from the Azka system.</p>
+                         """));
+
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment), "Status updated.");
     }
 
@@ -267,6 +320,12 @@ public class AssignmentService(
 
         if (assignment.Status == AssignmentStatus.Completed)
             throw new BadRequestException("Completed assignments cannot be cancelled.");
+
+        var scheduledStart = assignment.ScheduledStart;
+        var scheduledEnd   = assignment.ScheduledEnd;
+        var woNumber       = assignment.WorkOrder.WorkOrderNumber;
+        var engineerName   = assignment.Engineer.FullName;
+        var engineerEmail  = assignment.Engineer.Email;
 
         await unitOfWork.GetRepository<AssignmentHistory, int>().AddAsync(new AssignmentHistory
         {
@@ -284,6 +343,19 @@ public class AssignmentService(
 
         unitOfWork.GetRepository<Assignment, int>().Update(assignment);
         await unitOfWork.SaveChangesAsync();
+
+        if (!string.IsNullOrWhiteSpace(engineerEmail))
+            await emailQueue.EnqueueAsync(new EmailJobDescriptor(
+                To:      engineerEmail,
+                Subject: $"Assignment Cancelled — Work Order {woNumber}",
+                Body:    $"""
+                         <h2>Hello {engineerName},</h2>
+                         <p>Your assignment for <strong>Work Order {woNumber}</strong>
+                         (scheduled {scheduledStart:f} → {scheduledEnd:f}) has been <strong>cancelled</strong>.</p>
+                         <p><strong>Cancelled by:</strong> {cancelledBy}</p>
+                         <br/>
+                         <p style="color:#888;font-size:12px;">Automated message from the Azka system.</p>
+                         """));
 
         return ApiResponse<bool>.Success(true, "Assignment cancelled.");
     }
@@ -304,9 +376,10 @@ public class AssignmentService(
                 $"Scheduled time {startTime}-{endTime} falls outside engineer '{engineerName}'s working hours ({workingHours}).");
     }
 
-    private async Task CheckDailyCapacity(int engineerId, DateTime scheduledStart, DateTime scheduledEnd, double newHours, Engineer engineer)
+    private async Task CheckDailyCapacity(int engineerId, DateTime scheduledStart, DateTime scheduledEnd,
+        double newHours, Engineer engineer)
     {
-        var capacitySpec  = new DailyCapacitySpecification(engineerId, scheduledStart);
+        var capacitySpec   = new DailyCapacitySpecification(engineerId, scheduledStart);
         var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
         var existingHours  = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
 

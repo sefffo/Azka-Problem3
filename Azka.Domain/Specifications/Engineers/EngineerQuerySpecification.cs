@@ -5,7 +5,6 @@ namespace Azka.Domain.Specifications.Engineers;
 
 /// <summary>
 /// Unified specification for GET /api/Engineers.
-/// Replaces ActiveEngineersSpecification + EngineerByRegionSpecification.
 /// All parameters are optional — omit to get all engineers (paginated).
 /// </summary>
 public class EngineerQuerySpecification : BaseSpecification<Engineer>
@@ -43,14 +42,28 @@ public class EngineerQuerySpecification : BaseSpecification<Engineer>
         }
     }
 
+    /// <summary>
+    /// Combines two predicate expressions with AND using a parameter-replacement
+    /// visitor so EF Core can translate the combined expression to SQL.
+    /// (Expression.Invoke is NOT translatable by EF Core / SQL Server.)
+    /// </summary>
     private static Expression<Func<T, bool>> Combine<T>(
         Expression<Func<T, bool>>? left,
         Expression<Func<T, bool>> right)
     {
         if (left is null) return right;
-        var param     = Expression.Parameter(typeof(T));
-        var leftBody  = Expression.Invoke(left,  param);
-        var rightBody = Expression.Invoke(right, param);
-        return Expression.Lambda<Func<T, bool>>(Expression.AndAlso(leftBody, rightBody), param);
+
+        // Reuse the parameter from 'left' inside the body of 'right'
+        var param        = left.Parameters[0];
+        var rightBody    = new ParameterReplacer(right.Parameters[0], param).Visit(right.Body);
+        var combined     = Expression.AndAlso(left.Body, rightBody);
+        return Expression.Lambda<Func<T, bool>>(combined, param);
+    }
+
+    private sealed class ParameterReplacer(ParameterExpression from, ParameterExpression to)
+        : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node)
+            => node == from ? to : base.VisitParameter(node);
     }
 }
