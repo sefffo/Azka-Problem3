@@ -1,9 +1,11 @@
 using Azka.Domain.Entities;
 using Azka.Domain.Interfaces;
 using Azka.Domain.Specifications;
+using Azka.Persistence.Data;
 using Azka.Services.DTOs.Engineer;
 using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
+using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -28,7 +30,20 @@ public class EngineerServiceTests
         _uow.Setup(u => u.GetRepository<Engineer, int>()).Returns(_engineerRepo.Object);
         _uow.Setup(u => u.GetRepository<Assignment, int>()).Returns(_assignmentRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
-        _service = new EngineerService(_uow.Object);
+
+        // IMemoryCache mock: TryGetValue always misses so every call hits the DB.
+        var cache = new Mock<IMemoryCache>();
+        var cacheEntry = new Mock<ICacheEntry>();
+        cache.Setup(c => c.TryGetValue(It.IsAny<object>(), out It.Ref<object?>.IsAny))
+             .Returns(false);
+        cache.Setup(c => c.CreateEntry(It.IsAny<object>())).Returns(cacheEntry.Object);
+
+        // DashboardService needs IUnitOfWork, AppDbContext, IMemoryCache.
+        // We only need it so InvalidateDashboard() can be called safely —
+        // use a null AppDbContext reference; it is never accessed in write paths.
+        var dashboardService = new DashboardService(_uow.Object, null!, cache.Object);
+
+        _service = new EngineerService(_uow.Object, cache.Object, dashboardService);
     }
 
     // ── GetAllAsync ──────────────────────────────────────────────────────────
@@ -170,7 +185,7 @@ public class EngineerServiceTests
         _uow.Verify(u => u.SaveChangesAsync(), Times.Once);
     }
 
-    // ── DeleteAsync (soft-delete) ─────────────────────────────────────────────
+    // ── DeleteAsync (soft-delete) ──────────────────────────────────────────────
 
     [Fact]
     public async Task DeleteAsync_WhenNotFound_ThrowsNotFoundException()
@@ -195,7 +210,7 @@ public class EngineerServiceTests
         _uow.Verify(u => u.SaveChangesAsync(), Times.Once);
     }
 
-    // ── GetWorkloadAsync ─────────────────────────────────────────────────────
+    // ── GetWorkloadAsync ───────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetWorkloadAsync_WhenNotFound_ThrowsNotFoundException()
@@ -263,7 +278,7 @@ public class EngineerServiceTests
         Assert.Equal(100, result.Data.UtilizationPercentage);
     }
 
-    // ── GetAvailableAsync ────────────────────────────────────────────────────
+    // ── GetAvailableAsync ──────────────────────────────────────────────────────────
 
     [Fact]
     public async Task GetAvailableAsync_WhenEndBeforeStart_ReturnsFailed()
