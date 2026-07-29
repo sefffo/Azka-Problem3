@@ -11,6 +11,7 @@ using Azka.Services.Implementation;
 using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -24,6 +25,8 @@ public class EngineerAvailabilityTests
     private readonly IAssignmentService _assignmentService;
     private readonly IEngineerService _engineerService;
     private readonly Engineer _engineer;
+    private readonly IDashboardService _dashboardService;
+    private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
 
     public EngineerAvailabilityTests()
     {
@@ -50,7 +53,7 @@ public class EngineerAvailabilityTests
         _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
 
         _assignmentService = new AssignmentService(_uow.Object,new BackgroundEmailQueue());
-        _engineerService = new EngineerService(_uow.Object);
+        _engineerService = new EngineerService(_uow.Object, _cache , _dashboardService);
     }
 
     [Fact]
