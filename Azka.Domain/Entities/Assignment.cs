@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using Azka.Domain.Enums;
 
 namespace Azka.Domain.Entities;
@@ -14,6 +15,9 @@ public class Assignment : BaseEntity<int>
     public string? AssignedBy { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
+
+    [Timestamp]
+    public byte[] RowVersion { get; set; } = [];
 
     public ICollection<AssignmentHistory> History { get; set; } = new List<AssignmentHistory>();
 }

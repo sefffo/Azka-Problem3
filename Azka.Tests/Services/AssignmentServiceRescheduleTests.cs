@@ -8,6 +8,7 @@ using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
 using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
+using Microsoft.EntityFrameworkCore.Storage;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -17,6 +18,7 @@ public class AssignmentServiceRescheduleTests
     private readonly Mock<IUnitOfWork> _uow = new();
     private readonly Mock<IGenericRepository<Assignment, int>> _assignmentRepo = new();
     private readonly Mock<IGenericRepository<AssignmentHistory, int>> _historyRepo = new();
+    private readonly Mock<IDbContextTransaction> _tx = new();
     private readonly IAssignmentService _service;
     private readonly Assignment _existingAssignment;
 
@@ -46,6 +48,7 @@ public class AssignmentServiceRescheduleTests
         _uow.Setup(u => u.GetRepository<Assignment, int>()).Returns(_assignmentRepo.Object);
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+        _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
 
         _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }

@@ -7,6 +7,7 @@ using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
 using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
+using Microsoft.EntityFrameworkCore.Storage;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -18,6 +19,7 @@ public class AssignmentServiceCreateTests
     private readonly Mock<IGenericRepository<WorkOrder, int>> _workOrderRepo = new();
     private readonly Mock<IGenericRepository<Assignment, int>> _assignmentRepo = new();
     private readonly Mock<IGenericRepository<AssignmentHistory, int>> _historyRepo = new();
+    private readonly Mock<IDbContextTransaction> _tx = new();
     private readonly IAssignmentService _service;
     private readonly Engineer _engineer;
     private readonly WorkOrder _workOrder;
@@ -51,6 +53,7 @@ public class AssignmentServiceCreateTests
         _uow.Setup(u => u.GetRepository<Assignment, int>()).Returns(_assignmentRepo.Object);
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+        _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
 
         _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }
@@ -81,6 +84,21 @@ public class AssignmentServiceCreateTests
             ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
         };
         await Assert.ThrowsAsync<NotFoundException>(() => _service.CreateAsync(dto, "Dispatcher"));
+    }
+
+    [Fact]
+    public async Task CreateAsync_WhenWorkOrderAlreadyAssigned_ThrowsBadRequest()
+    {
+        _workOrder.Status = WorkOrderStatus.Assigned;
+        var dto = new CreateAssignmentDto
+        {
+            EngineerId = 1,
+            WorkOrderId = 1,
+            ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
+            ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
+        };
+        var ex = await Assert.ThrowsAsync<BadRequestException>(() => _service.CreateAsync(dto, "Dispatcher"));
+        Assert.Contains("already assigned", ex.Message);
     }
 
     [Fact]

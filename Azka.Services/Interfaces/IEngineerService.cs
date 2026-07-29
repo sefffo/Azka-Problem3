@@ -11,4 +11,5 @@ public interface IEngineerService
     Task<ApiResponse<EngineerDto>>              UpdateAsync(int id, UpdateEngineerDto dto);
     Task<ApiResponse<bool>>                     DeleteAsync(int id);
     Task<ApiResponse<EngineerWorkloadDto>>       GetWorkloadAsync(int id, DateTime date);
+    Task<ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>> GetAvailableAsync(DateTime from, DateTime to, string? region = null);
 }

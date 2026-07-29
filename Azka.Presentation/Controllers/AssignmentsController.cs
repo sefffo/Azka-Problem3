@@ -35,6 +35,15 @@ public class AssignmentsController(IAssignmentService assignmentService) : Contr
         return result.Succeeded ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>Auto-assign a work order to the least loaded available engineer</summary>
+    [HttpPost("auto-assign")]
+    [Authorize(Roles = "Admin,Dispatcher")]
+    public async Task<IActionResult> AutoAssign([FromBody] AutoAssignDto dto)
+    {
+        var result = await assignmentService.AutoAssignAsync(dto, CurrentUser);
+        return result.Succeeded ? Ok(result) : BadRequest(result);
+    }
+
     /// <summary>Reschedule an assignment (history is preserved)</summary>
     [HttpPut("{id:int}/reschedule")]
     [Authorize(Roles = "Admin,Dispatcher")]

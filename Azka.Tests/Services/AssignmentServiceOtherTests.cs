@@ -8,6 +8,7 @@ using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
 using Azka.Services.Implementation.Email;
 using Azka.Services.Interfaces;
+using Microsoft.EntityFrameworkCore.Storage;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -18,6 +19,7 @@ public class AssignmentServiceOtherTests
     private readonly Mock<IGenericRepository<Assignment, int>> _assignmentRepo = new();
     private readonly Mock<IGenericRepository<AssignmentHistory, int>> _historyRepo = new();
     private readonly Mock<IGenericRepository<WorkOrder, int>> _workOrderRepo = new();
+    private readonly Mock<IDbContextTransaction> _tx = new();
     private readonly IAssignmentService _service;
 
     public AssignmentServiceOtherTests()
@@ -26,6 +28,8 @@ public class AssignmentServiceOtherTests
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(_workOrderRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+        _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
+        _service = new AssignmentService(_uow.Object);
         _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
     }
 
@@ -91,10 +95,16 @@ public class AssignmentServiceOtherTests
         {
             Id = 1,
             Status = AssignmentStatus.Assigned,
-            WorkOrder = workOrder
+            WorkOrder = workOrder,
+            ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
+            ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
         };
         _assignmentRepo.Setup(r => r.GetBySpecAsync(It.IsAny<AssignmentByIdSpecification>()))
             .ReturnsAsync(assignment);
+        AssignmentHistory? createdHistory = null;
+        _historyRepo.Setup(r => r.AddAsync(It.IsAny<AssignmentHistory>()))
+            .Callback<AssignmentHistory>(h => createdHistory = h)
+            .Returns(Task.CompletedTask);
 
         var dto = new UpdateAssignmentStatusDto { Status = AssignmentStatus.InProgress };
         var result = await _service.UpdateStatusAsync(1, dto);
@@ -102,7 +112,11 @@ public class AssignmentServiceOtherTests
         Assert.True(result.Succeeded);
         Assert.Equal(WorkOrderStatus.InProgress, workOrder.Status);
         Assert.Equal(AssignmentStatus.InProgress, assignment.Status);
+        Assert.NotNull(createdHistory);
+        Assert.Equal("Assigned", createdHistory.PreviousStatus);
+        Assert.Equal("Status changed to InProgress", createdHistory.ChangeReason);
         _assignmentRepo.Verify(r => r.Update(assignment), Times.Once);
+        _historyRepo.Verify(r => r.AddAsync(It.IsAny<AssignmentHistory>()), Times.Once);
         _uow.Verify(u => u.SaveChangesAsync(), Times.Once);
     }
 
@@ -114,10 +128,16 @@ public class AssignmentServiceOtherTests
         {
             Id = 1,
             Status = AssignmentStatus.InProgress,
-            WorkOrder = workOrder
+            WorkOrder = workOrder,
+            ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
+            ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
         };
         _assignmentRepo.Setup(r => r.GetBySpecAsync(It.IsAny<AssignmentByIdSpecification>()))
             .ReturnsAsync(assignment);
+        AssignmentHistory? createdHistory = null;
+        _historyRepo.Setup(r => r.AddAsync(It.IsAny<AssignmentHistory>()))
+            .Callback<AssignmentHistory>(h => createdHistory = h)
+            .Returns(Task.CompletedTask);
 
         var dto = new UpdateAssignmentStatusDto { Status = AssignmentStatus.Completed };
         var result = await _service.UpdateStatusAsync(1, dto);
@@ -125,6 +145,10 @@ public class AssignmentServiceOtherTests
         Assert.True(result.Succeeded);
         Assert.Equal(WorkOrderStatus.Completed, workOrder.Status);
         Assert.Equal(AssignmentStatus.Completed, assignment.Status);
+        Assert.NotNull(createdHistory);
+        Assert.Equal("InProgress", createdHistory.PreviousStatus);
+        Assert.Equal("Status changed to Completed", createdHistory.ChangeReason);
+        _historyRepo.Verify(r => r.AddAsync(It.IsAny<AssignmentHistory>()), Times.Once);
     }
 
     // ── CancelAsync ─────────────────────────────────────────────────────────────────────────────
