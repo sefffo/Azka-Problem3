@@ -7,21 +7,49 @@ using Azka.Services.DTOs.Dashboard;
 using Azka.Services.Interfaces;
 using Azka.Shared.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Azka.Services.Implementation;
 
 public class DashboardService(
     IUnitOfWork unitOfWork,
-    AppDbContext context) : IDashboardService
+    AppDbContext context,
+    IMemoryCache cache) : IDashboardService
 {
+    // Dashboard KPIs are expensive (9 DB queries) but tolerate 2-minute staleness.
+    private static readonly TimeSpan CacheTtl = TimeSpan.FromMinutes(2);
+
     public async Task<ApiResponse<DashboardDto>> GetDashboardAsync()
+    {
+        if (cache.TryGetValue(CacheKeys.Dashboard, out DashboardDto? cached))
+            return ApiResponse<DashboardDto>.Success(cached!);
+
+        var dto = await BuildDashboardAsync();
+
+        cache.Set(CacheKeys.Dashboard, dto, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = CacheTtl,
+            Size = 1
+        });
+
+        return ApiResponse<DashboardDto>.Success(dto);
+    }
+
+    /// <summary>
+    /// Called by EngineerService, AssetService, and AssignmentService writes
+    /// so the next dashboard request rebuilds from fresh data.
+    /// </summary>
+    public void InvalidateDashboard() => cache.Remove(CacheKeys.Dashboard);
+
+    // ────────────────────────────────────────────────────────────────────────
+
+    private async Task<DashboardDto> BuildDashboardAsync()
     {
         var today    = DateTime.UtcNow.Date;
         var tomorrow = today.AddDays(1);
 
-        // ─── Engineer summary ───────────────────────────────────────────────────────
         // Filtered Include (today's active assignments only) — kept as EF
-        // query because BaseSpecification doesn’t support filtered collections.
+        // query because BaseSpecification doesn't support filtered collections.
         var engineers = await context.Engineers
             .AsNoTracking()
             .Include(e => e.Assignments.Where(a =>
@@ -37,19 +65,18 @@ public class DashboardService(
         int overloaded = activeEngineers.Count(e =>
             e.Assignments.Sum(a => a.WorkOrder?.EstimatedHours ?? 0) > e.DailyCapacityHours);
 
-        // ─── Work order KPIs via specs (each becomes a lean COUNT query) ────
         var repo = unitOfWork.GetRepository<WorkOrder, int>();
 
-        var totalWO     = await repo.CountAsync(new AllWorkOrdersSpecification());
-        var openWO      = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Open));
-        var assignedWO  = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Assigned));
-        var inProgressWO= await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.InProgress));
-        var completedWO = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Completed));
-        var cancelledWO = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Cancelled));
-        var overdueWO   = await repo.CountAsync(new OverdueWorkOrderSpecification());
-        var emergencyWO = await repo.CountAsync(new WorkOrderByPrioritySpecification(Priority.Emergency));
+        var totalWO      = await repo.CountAsync(new AllWorkOrdersSpecification());
+        var openWO       = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Open));
+        var assignedWO   = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Assigned));
+        var inProgressWO = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.InProgress));
+        var completedWO  = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Completed));
+        var cancelledWO  = await repo.CountAsync(new WorkOrderByStatusSpecification(WorkOrderStatus.Cancelled));
+        var overdueWO    = await repo.CountAsync(new OverdueWorkOrderSpecification());
+        var emergencyWO  = await repo.CountAsync(new WorkOrderByPrioritySpecification(Priority.Emergency));
 
-        return ApiResponse<DashboardDto>.Success(new DashboardDto
+        return new DashboardDto
         {
             EngineerSummary = new EngineerSummaryDto
             {
@@ -70,6 +97,6 @@ public class DashboardService(
                 EmergencyRequests    = emergencyWO,
                 CancelledWorkOrders  = cancelledWO
             }
-        });
+        };
     }
 }

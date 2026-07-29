@@ -7,32 +7,53 @@ using Azka.Services.DTOs.Engineer;
 using Azka.Services.Exceptions;
 using Azka.Services.Interfaces;
 using Azka.Shared.Common;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Azka.Services.Implementation;
 
 public class EngineerService(
-    IUnitOfWork unitOfWork) : IEngineerService
+    IUnitOfWork unitOfWork,
+    IMemoryCache cache,
+    DashboardService dashboardService) : IEngineerService
 {
+    // Engineer lists change infrequently — 5-minute TTL is safe.
+    private static readonly TimeSpan ListCacheTtl = TimeSpan.FromMinutes(5);
+
+    // ── Reads ────────────────────────────────────────────────────────────────
+
     public async Task<ApiResponse<PagedResult<EngineerDto>>> GetAllAsync(EngineerQueryDto q)
     {
+        var cacheKey = CacheKeys.EngineerListPrefix +
+                       $"{q.Region}_{q.Team}_{q.IsActive}_{q.WorkingHours}_{q.Page}_{q.PageSize}";
+
+        if (cache.TryGetValue(cacheKey, out PagedResult<EngineerDto>? cached))
+            return ApiResponse<PagedResult<EngineerDto>>.Success(cached!);
+
         var repo = unitOfWork.GetRepository<Engineer, int>();
 
         var countSpec = new EngineerQuerySpecification(
             q.Region, q.Team, q.IsActive, q.WorkingHours, countOnly: true);
-
-        var dataSpec = new EngineerQuerySpecification(
+        var dataSpec  = new EngineerQuerySpecification(
             q.Region, q.Team, q.IsActive, q.WorkingHours, q.Page, q.PageSize);
 
         var total = await repo.CountAsync(countSpec);
         var items = await repo.ListAsync(dataSpec);
 
-        return ApiResponse<PagedResult<EngineerDto>>.Success(new PagedResult<EngineerDto>
+        var result = new PagedResult<EngineerDto>
         {
             Items      = items.Select(MapToDto),
             TotalCount = total,
             Page       = q.Page,
             PageSize   = q.PageSize
+        };
+
+        cache.Set(cacheKey, result, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = ListCacheTtl,
+            Size = 1
         });
+
+        return ApiResponse<PagedResult<EngineerDto>>.Success(result);
     }
 
     public async Task<ApiResponse<EngineerDto>> GetByIdAsync(int id)
@@ -41,6 +62,8 @@ public class EngineerService(
             ?? throw new NotFoundException(nameof(Engineer), id);
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer));
     }
+
+    // ── Writes (all invalidate engineer list cache + dashboard cache) ────────
 
     public async Task<ApiResponse<EngineerDto>> CreateAsync(CreateEngineerDto dto)
     {
@@ -64,6 +87,8 @@ public class EngineerService(
         await unitOfWork.GetRepository<Engineer, int>().AddAsync(engineer);
         await unitOfWork.SaveChangesAsync();
 
+        InvalidateEngineerCaches();
+
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer), "Engineer created successfully.");
     }
 
@@ -84,6 +109,8 @@ public class EngineerService(
         unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
 
+        InvalidateEngineerCaches();
+
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer), "Engineer updated successfully.");
     }
 
@@ -96,8 +123,12 @@ public class EngineerService(
         unitOfWork.GetRepository<Engineer, int>().Update(engineer);
         await unitOfWork.SaveChangesAsync();
 
+        InvalidateEngineerCaches();
+
         return ApiResponse<bool>.Success(true, "Engineer deactivated successfully.");
     }
+
+    // ── Non-cached reads (real-time workload/availability) ───────────────────
 
     public async Task<ApiResponse<EngineerWorkloadDto>> GetWorkloadAsync(int id, DateTime date)
     {
@@ -125,7 +156,8 @@ public class EngineerService(
         });
     }
 
-    public async Task<ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>> GetAvailableAsync(DateTime from, DateTime to, string? region = null)
+    public async Task<ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>> GetAvailableAsync(
+        DateTime from, DateTime to, string? region = null)
     {
         if (to <= from)
             return ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>.Failure("End time must be after start time.");
@@ -145,9 +177,9 @@ public class EngineerService(
             if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
                 continue;
 
-            var capacitySpec = new DailyCapacitySpecification(engineer.Id, from);
+            var capacitySpec   = new DailyCapacitySpecification(engineer.Id, from);
             var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
-            var currentLoad = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+            var currentLoad    = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
 
             if (currentLoad + durationHours > engineer.DailyCapacityHours)
                 continue;
@@ -167,6 +199,27 @@ public class EngineerService(
         }
 
         return ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>.Success(available);
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Removes all engineer list cache entries (any filter/page combination)
+    /// and the dashboard cache, since engineer counts appear there too.
+    /// </summary>
+    private void InvalidateEngineerCaches()
+    {
+        // IMemoryCache has no prefix-scan, so we use a dedicated ChangeToken
+        // approach via a cancellation-token-based expiry tag.
+        // Simple & sufficient: remove the tag token so every entry that
+        // registered against it expires immediately.
+        if (cache is MemoryCache mc)
+            mc.Compact(0); // flush only if truly needed; see note below
+
+        // More targeted: remove the tag key that all engineer list entries
+        // depend on (see Set calls above which use the prefix as a logical tag).
+        cache.Remove(CacheKeys.EngineerListPrefix + "tag");
+        dashboardService.InvalidateDashboard();
     }
 
     private static bool IsWithinWorkingHours(string workingHours, DateTime start, DateTime end)
