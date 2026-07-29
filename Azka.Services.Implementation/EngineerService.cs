@@ -1,8 +1,8 @@
 using Azka.Domain.Entities;
+using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
 using Azka.Domain.Specifications.Assignments;
 using Azka.Domain.Specifications.Engineers;
-using Azka.Persistence.Data;
 using Azka.Services.DTOs.Engineer;
 using Azka.Services.Exceptions;
 using Azka.Services.Interfaces;
@@ -11,8 +11,7 @@ using Azka.Shared.Common;
 namespace Azka.Services.Implementation;
 
 public class EngineerService(
-    IUnitOfWork unitOfWork,
-    AppDbContext context) : IEngineerService
+    IUnitOfWork unitOfWork) : IEngineerService
 {
     public async Task<ApiResponse<PagedResult<EngineerDto>>> GetAllAsync(EngineerQueryDto q)
     {
@@ -122,6 +121,63 @@ public class EngineerService(
             RemainingCapacityHours = remaining,
             UtilizationPercentage  = Math.Round(utilization, 2)
         });
+    }
+
+    public async Task<ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>> GetAvailableAsync(DateTime from, DateTime to, string? region = null)
+    {
+        if (to <= from)
+            return ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>.Failure("End time must be after start time.");
+
+        var available = new List<EngineerAvailabilityDto>();
+        var engineers = await unitOfWork.GetRepository<Engineer, int>()
+            .ListAsync(new AvailableEngineersSpecification(region));
+
+        var durationHours = (to - from).TotalHours;
+
+        foreach (var engineer in engineers)
+        {
+            if (!IsWithinWorkingHours(engineer.WorkingHours, from, to))
+                continue;
+
+            var conflictSpec = new AssignmentConflictSpecification(engineer.Id, from, to);
+            if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
+                continue;
+
+            var capacitySpec = new DailyCapacitySpecification(engineer.Id, from);
+            var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
+            var currentLoad = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+
+            if (currentLoad + durationHours > engineer.DailyCapacityHours)
+                continue;
+
+            available.Add(new EngineerAvailabilityDto
+            {
+                EngineerId             = engineer.Id,
+                FullName               = engineer.FullName,
+                Team                   = engineer.Team,
+                Region                 = engineer.Region,
+                Skills                 = engineer.Skills,
+                WorkingHours           = engineer.WorkingHours,
+                DailyCapacityHours     = engineer.DailyCapacityHours,
+                CurrentLoadHours       = currentLoad,
+                RemainingCapacityHours = engineer.DailyCapacityHours - currentLoad
+            });
+        }
+
+        return ApiResponse<IReadOnlyList<EngineerAvailabilityDto>>.Success(available);
+    }
+
+    private static bool IsWithinWorkingHours(string workingHours, DateTime start, DateTime end)
+    {
+        var parts = workingHours.Split('-');
+        if (parts.Length != 2 ||
+            !TimeOnly.TryParse(parts[0], out var whStart) ||
+            !TimeOnly.TryParse(parts[1], out var whEnd))
+            return false;
+
+        var reqStart = TimeOnly.FromDateTime(start);
+        var reqEnd   = TimeOnly.FromDateTime(end);
+        return reqStart >= whStart && reqEnd <= whEnd;
     }
 
     private static EngineerDto MapToDto(Engineer e) => new()

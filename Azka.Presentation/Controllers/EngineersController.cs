@@ -29,6 +29,14 @@ public class EngineersController(IEngineerService engineerService) : ControllerB
     public async Task<IActionResult> GetWorkload(int id, [FromQuery] DateTime date)
         => Ok(await engineerService.GetWorkloadAsync(id, date));
 
+    /// <summary>
+    /// Get engineers available for a given time window.
+    /// Checks working hours, conflicts, and daily capacity.
+    /// </summary>
+    [HttpGet("available")]
+    public async Task<IActionResult> GetAvailable([FromQuery] DateTime from, [FromQuery] DateTime to, [FromQuery] string? region)
+        => Ok(await engineerService.GetAvailableAsync(from, to, region));
+
     /// <summary>Create a new engineer (Admin or Dispatcher)</summary>
     [HttpPost]
     [Authorize(Roles = "Admin,Dispatcher")]
