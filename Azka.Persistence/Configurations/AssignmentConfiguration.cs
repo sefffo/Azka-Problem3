@@ -12,6 +12,10 @@ public class AssignmentConfiguration : IEntityTypeConfiguration<Assignment>
         builder.Property(a => a.Status).HasConversion<string>();
         builder.Property(a => a.AssignedBy).HasMaxLength(256);
 
+        builder.Property(a => a.RowVersion)
+               .IsRowVersion()
+               .IsConcurrencyToken();
+
         builder.HasIndex(a => new { a.EngineerId, a.ScheduledStart, a.ScheduledEnd });
         builder.HasIndex(a => a.Status);
 

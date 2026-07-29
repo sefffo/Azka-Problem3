@@ -1,6 +1,7 @@
 using Azka.Domain.Entities;
 using Azka.Domain.Interfaces;
 using Azka.Persistence.Data;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Azka.Persistence.Repositories;
 
@@ -22,6 +23,9 @@ public class UnitOfWork(AppDbContext context) : IUnitOfWork
 
     public async Task<int> SaveChangesAsync()
         => await context.SaveChangesAsync();
+
+    public async Task<IDbContextTransaction> BeginTransactionAsync()
+        => await context.Database.BeginTransactionAsync();
 
     public void Dispose()
         => context.Dispose();
