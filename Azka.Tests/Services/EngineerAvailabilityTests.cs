@@ -25,7 +25,6 @@ public class EngineerAvailabilityTests
     private readonly IAssignmentService _assignmentService;
     private readonly IEngineerService _engineerService;
     private readonly Engineer _engineer;
-    private readonly IDashboardService _dashboardService;
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
 
     public EngineerAvailabilityTests()
@@ -52,8 +51,11 @@ public class EngineerAvailabilityTests
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
 
-        _assignmentService = new AssignmentService(_uow.Object,new BackgroundEmailQueue());
-        _engineerService = new EngineerService(_uow.Object, _cache , _dashboardService);
+        // Mock IDashboardService — InvalidateDashboard() is a no-op in tests.
+        var dashboardService = new Mock<IDashboardService>();
+
+        _assignmentService = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
+        _engineerService   = new EngineerService(_uow.Object, _cache, dashboardService.Object);
     }
 
     [Fact]
@@ -164,7 +166,7 @@ public class EngineerAvailabilityTests
         woRepoMock.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((WorkOrder?)null);
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
-        var svc = new AssignmentService(uow.Object , new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
 
         var dto = new AutoAssignDto { WorkOrderId = 99, ScheduledStart = DateTime.UtcNow, ScheduledEnd = DateTime.UtcNow.AddHours(1) };
         await Assert.ThrowsAsync<NotFoundException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -178,7 +180,7 @@ public class EngineerAvailabilityTests
         woRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(wo);
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
-        var svc = new AssignmentService(uow.Object,new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
 
         var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0), ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0) };
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -213,7 +215,7 @@ public class EngineerAvailabilityTests
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
         uow.Setup(u => u.GetRepository<Engineer, int>()).Returns(engineerRepoMock.Object);
-        var svc = new AssignmentService(uow.Object , new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
 
         var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = DateTime.UtcNow, ScheduledEnd = DateTime.UtcNow.AddHours(1) };
         await Assert.ThrowsAsync<ServiceUnavailableException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -264,7 +266,7 @@ public class EngineerAvailabilityTests
         {
             WorkOrderId = 1,
             ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0),
-            ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0)
+            ScheduledEnd   = new DateTime(2026, 7, 28, 11, 0, 0)
         }, "System");
 
         Assert.True(result.Succeeded);

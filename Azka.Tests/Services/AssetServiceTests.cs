@@ -4,6 +4,8 @@ using Azka.Domain.Specifications;
 using Azka.Services.DTOs.Asset;
 using Azka.Services.Exceptions;
 using Azka.Services.Implementation;
+using Azka.Services.Interfaces;
+using Microsoft.Extensions.Caching.Memory;
 using Moq;
 
 namespace Azka.Tests.Services;
@@ -18,7 +20,18 @@ public class AssetServiceTests
     {
         _uow.Setup(u => u.GetRepository<Asset, int>()).Returns(_assetRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
-        _service = new AssetService(_uow.Object);
+
+        // IMemoryCache mock: always misses so every call hits the DB path.
+        var cache = new Mock<IMemoryCache>();
+        var cacheEntry = new Mock<ICacheEntry>();
+        cache.Setup(c => c.TryGetValue(It.IsAny<object>(), out It.Ref<object?>.IsAny))
+             .Returns(false);
+        cache.Setup(c => c.CreateEntry(It.IsAny<object>())).Returns(cacheEntry.Object);
+
+        // IDashboardService mock — InvalidateDashboard() is a no-op in tests.
+        var dashboardService = new Mock<IDashboardService>();
+
+        _service = new AssetService(_uow.Object, cache.Object, dashboardService.Object);
     }
 
     // ── GetAllAsync ──────────────────────────────────────────────────────────

@@ -12,7 +12,7 @@ namespace Azka.Services.Implementation;
 public class AssetService(
     IUnitOfWork unitOfWork,
     IMemoryCache cache,
-    DashboardService dashboardService) : IAssetService
+    IDashboardService dashboardService) : IAssetService
 {
     // Asset reference data is very stable — 10-minute TTL.
     private static readonly TimeSpan ListCacheTtl = TimeSpan.FromMinutes(10);
@@ -103,10 +103,6 @@ public class AssetService(
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Removes the asset list cache tag (expires all paged variants)
-    /// and the dashboard cache.
-    /// </summary>
     private void InvalidateAssetCaches()
     {
         cache.Remove(CacheKeys.AssetListPrefix + "tag");

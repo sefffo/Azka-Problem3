@@ -14,7 +14,7 @@ namespace Azka.Services.Implementation;
 public class EngineerService(
     IUnitOfWork unitOfWork,
     IMemoryCache cache,
-    DashboardService dashboardService) : IEngineerService
+    IDashboardService dashboardService) : IEngineerService
 {
     // Engineer lists change infrequently — 5-minute TTL is safe.
     private static readonly TimeSpan ListCacheTtl = TimeSpan.FromMinutes(5);
@@ -203,21 +203,11 @@ public class EngineerService(
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Removes all engineer list cache entries (any filter/page combination)
-    /// and the dashboard cache, since engineer counts appear there too.
-    /// </summary>
     private void InvalidateEngineerCaches()
     {
-        // IMemoryCache has no prefix-scan, so we use a dedicated ChangeToken
-        // approach via a cancellation-token-based expiry tag.
-        // Simple & sufficient: remove the tag token so every entry that
-        // registered against it expires immediately.
         if (cache is MemoryCache mc)
-            mc.Compact(0); // flush only if truly needed; see note below
+            mc.Compact(0);
 
-        // More targeted: remove the tag key that all engineer list entries
-        // depend on (see Set calls above which use the prefix as a logical tag).
         cache.Remove(CacheKeys.EngineerListPrefix + "tag");
         dashboardService.InvalidateDashboard();
     }
