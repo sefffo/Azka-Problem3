@@ -255,7 +255,8 @@ public class AssignmentService(
 
         assignment.Engineer  = engineer;
         assignment.WorkOrder = workOrder;
-
+        // de le email service m3 kol change fel assignemnts bbda2 ab3t email 
+        //kselt a3ml design ll mail bsraha 
         if (!string.IsNullOrWhiteSpace(engineer.Email))
             await emailQueue.EnqueueAsync(new EmailJobDescriptor(
                 To:      engineer.Email,
@@ -275,7 +276,7 @@ public class AssignmentService(
 
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment), "Assignment created successfully.");
     }
-
+    //based on the low work load it adds the new task to the engineer with the low work load 
     public async Task<ApiResponse<AssignmentDto>> AutoAssignAsync(AutoAssignDto dto, string assignedBy)
     {
         var workOrder = await unitOfWork.GetRepository<WorkOrder, int>().GetByIdAsync(dto.WorkOrderId)
@@ -299,7 +300,7 @@ public class AssignmentService(
         {
             if (!IsWithinWorkingHours(engineer.WorkingHours, dto.ScheduledStart, dto.ScheduledEnd))
                 continue;
-
+                                    // spec 3shan el check of conflicts fel mawa3id abl ma assign 3la had 
             var conflictSpec = new AssignmentConflictSpecification(engineer.Id, dto.ScheduledStart, dto.ScheduledEnd);
             if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
                 continue;
@@ -314,7 +315,7 @@ public class AssignmentService(
             if (currentLoad < lowestLoad)
             {
                 lowestLoad = currentLoad;
-                bestEngineer = engineer;
+                bestEngineer = engineer; // lw f3ln lafet 3lihom kolohom w l2eet a2l worl load m3 avaliable working hours fel youm yb2a hwa da 
             }
         }
 
@@ -339,7 +340,7 @@ public class AssignmentService(
         unitOfWork.GetRepository<WorkOrder, int>().Update(workOrder);
         await unitOfWork.SaveChangesAsync();
 
-        await tx.CommitAsync();
+        await tx.CommitAsync(); // all or none transaction 
 
         assignment.Engineer  = bestEngineer;
         assignment.WorkOrder = workOrder;

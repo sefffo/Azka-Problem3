@@ -12,7 +12,8 @@ public class GenericRepository<TEntity, TKey>(
 {
     private readonly DbSet<TEntity> _dbSet = context.Set<TEntity>();
 
-    // ── Basic CRUD ────────────────────────────────────────────────────────────
+    #region Basic CRUD
+
     public async Task<TEntity?> GetByIdAsync(TKey id)
         => await _dbSet.FindAsync(id);
 
@@ -28,12 +29,18 @@ public class GenericRepository<TEntity, TKey>(
     public void Delete(TEntity entity)
         => _dbSet.Remove(entity);
 
-    // ── Specification-based queries ───────────────────────────────────────────
+    #endregion
+
+
+    #region Specifications
+
     public async Task<TEntity?> GetBySpecAsync(ISpecification<TEntity> spec)
         => await SpecificationEvaluator<TEntity>
             .GetQuery(_dbSet.AsQueryable(), spec)
             .FirstOrDefaultAsync();
 
+
+    //get all using the spec 
     public async Task<IReadOnlyList<TEntity>> ListAsync(ISpecification<TEntity> spec)
         => await SpecificationEvaluator<TEntity>
             .GetQuery(_dbSet.AsQueryable(), spec)
@@ -49,3 +56,5 @@ public class GenericRepository<TEntity, TKey>(
             .GetQuery(_dbSet.AsQueryable(), spec)
             .AnyAsync();
 }
+
+#endregion

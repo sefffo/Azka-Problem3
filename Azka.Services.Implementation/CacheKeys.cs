@@ -4,6 +4,7 @@ namespace Azka.Services.Implementation;
 /// Central registry of all IMemoryCache keys used across services.
 /// </summary>
 public static class CacheKeys
+// add tthe finger print 3la kol query rag3a mn el cache 
 {
     // ── Dashboard ────────────────────────────────────────────────────────────
     public const string Dashboard = "dashboard_summary";

@@ -146,6 +146,9 @@ public class AssetService(
     }
 
     // ── Writes (all invalidate asset list cache + dashboard cache) ───────────
+    
+    //da 3shan el cache mygebsh requests adyma so we use the invalidators to reamove the old key and add new one 
+    //kont ayez adef redis bs mfesh account maya fadi 3 upstash 
 
     public async Task<ApiResponse<AssetDto>> CreateAsync(CreateAssetDto dto)
     {
