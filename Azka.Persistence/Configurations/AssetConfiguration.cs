@@ -10,7 +10,7 @@ public class AssetConfiguration : IEntityTypeConfiguration<Asset>
     {
         builder.HasKey(a => a.Id);
         builder.Property(a => a.AssetNumber).IsRequired().HasMaxLength(50);
-        builder.HasIndex(a => a.AssetNumber).IsUnique();
+        builder.HasIndex(a => a.AssetNumber).IsUnique(); // most important as we do intensive reads on this table 
         builder.Property(a => a.Address).IsRequired().HasMaxLength(300);
         builder.Property(a => a.CustomerName).IsRequired().HasMaxLength(150);
         builder.Property(a => a.AssetType).HasConversion<string>();

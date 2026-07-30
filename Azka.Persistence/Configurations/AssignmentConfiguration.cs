@@ -14,8 +14,10 @@ public class AssignmentConfiguration : IEntityTypeConfiguration<Assignment>
 
         builder.Property(a => a.RowVersion)
                .IsRowVersion()
-               .IsConcurrencyToken();
+               .IsConcurrencyToken(); // 3shan nt2ked mn el mshakel bta3et el double assignments fa nt2ked mn all or none commit 
 
+        
+        // intensive reads on this table
         builder.HasIndex(a => new { a.EngineerId, a.ScheduledStart, a.ScheduledEnd });
         builder.HasIndex(a => a.Status);
 
