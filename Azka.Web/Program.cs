@@ -16,15 +16,15 @@ using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ─── Controllers (from Presentation layer) ──────────────────────────────────
+
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .AddApplicationPart(typeof(AuthController).Assembly);
 
-// ─── Persistence (DbContext + UnitOfWork) ────────────────────────────────
+//persistence DI
 builder.Services.AddPersistenceServices(builder.Configuration);
 
-// ─── Identity ─────────────────────────────────────────────────────────
+// identity rules 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     {
         options.Password.RequireDigit = true;
@@ -59,15 +59,18 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// ─── Email Settings ─────────────────────────────────────────────────────────
+
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("EmailSettings"));
 
-// ─── Application + Implementation Services ─────────────────────────────────
+//DI
+#region DI of Services 
+
 builder.Services.AddApplicationServices();
 builder.Services.AddServiceImplementations();
 
-// ─── Swagger ─────────────────────────────────────────────────────────
+#endregion
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -103,12 +106,15 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ─── Migrate + Seed (runs once on startup) ─────────────────────────────────
+
+#region Seeding Logic
+
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await context.Database.MigrateAsync();
 
+    // ;azem pre seeded roles 3shan lma ahtagha fel creation 
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     string[] roles = ["Admin", "Dispatcher", "Engineer"];
     foreach (var role in roles)
@@ -120,7 +126,8 @@ using (var scope = app.Services.CreateScope())
     await DbSeeder.SeedAsync(context);
 }
 
-// ─── Middleware Pipeline ────────────────────────────────────────────────────
+#endregion
+
 app.UseMiddleware<ExceptionHandlerMiddleware>();
 
 if (app.Environment.IsDevelopment())
