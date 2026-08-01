@@ -67,7 +67,7 @@ namespace Azka.Services.Implementation;
 ///       │
 ///       ▼
 ///  InvalidateAssetCaches()
-///   ├─ MemoryCache.Compact(0)              (clears ALL cache entries)
+///   ├─ MemoryCache.Compact(1.0)            (clears 100% of cache entries)
 ///   └─ IDashboardService.InvalidateDashboard()
 ///       │
 ///       ▼
@@ -189,11 +189,10 @@ public class AssetService(
 
     private void InvalidateAssetCaches()
     {
-        // cache keys are fingerprinted per query params (assets_list_{type}_{status}_...)
-        // so we can't remove a single "tag" key — we must evict the whole cache.
-        // This mirrors the same pattern used in EngineerService.InvalidateEngineerCaches().
+        // Compact(1.0) = evict 100% of all cache entries.
+        // Compact(0)   = evict 0%  (removes nothing) — that was the original bug.
         if (cache is MemoryCache mc)
-            mc.Compact(0);
+            mc.Compact(1.0);
 
         dashboardService.InvalidateDashboard();
     }
