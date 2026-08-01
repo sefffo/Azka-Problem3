@@ -337,6 +337,56 @@ AssignmentHistory
 | API Docs | Swashbuckle / Swagger UI |
 | Testing | xUnit + Moq |
 | Architecture | Clean Architecture · Repository · Unit of Work · Specification |
+| Frontend | Angular 22 + Angular Material (in `frontend/`) |
+
+---
+
+## 🖥 Frontend (Angular)
+
+The web client lives in the [`frontend/`](./frontend) folder:
+
+```
+frontend/
+└── src/app/
+    ├── core/                      # Services, guards, interceptors, models, constants
+    │   ├── models/                # DTO mirrors (ApiResponse, Dashboard, WorkOrder, …)
+    │   ├── services/              # Auth, Dashboard, WorkOrders, Engineers, Assignments, Assets
+    │   ├── guards/                # AuthGuard (protects all authenticated pages)
+    │   └── interceptors/          # Attaches JWT bearer token to every request
+    ├── features/
+    │   ├── home/                  # Public landing / homepage
+    │   ├── auth/                  # Sign-in + Register pages (POST /api/Auth/*)
+    │   ├── dashboard/             # KPIs, donut chart, operational health, recent tables
+    │   ├── board/                 # Kanban board — drag & drop work orders between statuses
+    │   ├── work-orders/           # List, filters, create, status changes, cancel
+    │   ├── assignments/           # List, manual assign, auto-assign, reschedule, cancel
+    │   ├── engineers/             # List, create/edit, workload, activate/deactivate
+    │   └── assets/                # List, register, delete
+    ├── shared/                    # Header, footer, confirm dialog, pagination, toasts
+    ├── app.routes.ts              # Lazy-loaded routes
+    └── environments/              # apiUrl (default https://localhost:5001/api)
+```
+
+**Feature pages** (all protected by JWT):
+
+| Page | Route | Highlights |
+|---|---|---|
+| Dashboard | `/dashboard` | Live KPIs from `GET /api/Dashboard` |
+| Task board | `/board` | **Drag & drop** work orders between Open → Assigned → In Progress → Completed/Cancelled |
+| Work Orders | `/work-orders` | Filter, create, change status, cancel |
+| Assignments | `/assignments` | Manual assign + **auto-assign** + reschedule with history |
+| Engineers | `/engineers` | CRUD, workload dialog, capacity + utilization |
+| Assets | `/assets` | Register & manage customer equipment |
+
+### Running the frontend
+
+```bash
+cd frontend
+npm install
+npm start          # http://localhost:4200
+```
+
+The API already enables **CORS** for `http://localhost:4200`, and the JWT interceptor attaches the bearer token automatically after login.
 
 ---
 
