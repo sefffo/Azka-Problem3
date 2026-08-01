@@ -1,0 +1,263 @@
+### Azka Maintenance Scheduling — End-to-End Test Requests
+### Base: https://localhost:5001/api
+### Flow: register -> login -> create assets/engineers -> work orders -> auto/manual assign -> reschedule -> status flow -> dashboard
+###
+### HOW TO RUN:
+### 1) Run the backend:  dotnet run --project Azka.Web
+### 2) Run requests below in order. After Login (request 4), copy the returned
+###    "token" value into @adminToken below (replaces the placeholder).
+### 3) Tip: create a second @engineerToken from Login with engineer@azka.dev (registered in request 2)
+###    to test role restrictions.
+
+@api = https://localhost:5001/api
+
+### 1) REGISTER — Admin (do once; returns 409 if email already exists)
+POST {{api}}/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Test Admin",
+  "email": "admin@azka.dev",
+  "password": "Admin123!",
+  "role": "Admin"
+}
+
+### 2) REGISTER — Engineer (do once; for role-permission tests later)
+POST {{api}}/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Test Engineer",
+  "email": "engineer@azka.dev",
+  "password": "Engineer123!",
+  "role": "Engineer"
+}
+
+### 3) LOGIN — returns { token, ... }; copy token into @adminToken below
+POST {{api}}/Auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@azka.dev",
+  "password": "Admin123!"
+}
+
+### NEGATIVE TEST — wrong password should return 401 with an error message
+POST {{api}}/Auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@azka.dev",
+  "password": "wrong-password"
+}
+
+@adminToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNjA3Zjk2My05YTFlLTRiZTktYTAxYy0yYTExMDc2ZjcxZTMiLCJlbWFpbCI6ImFkbWluQGF6a2EuZGV2IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IlRlc3QgQWRtaW4iLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBZG1pbiIsImp0aSI6IjlmNTVjZWQyLTUxNmEtNGFmOS04NDcyLTNmMzVjZThmMzUxNiIsImV4cCI6MTc4NTY3MTMwOSwiaXNzIjoiQXprYU1haW50ZW5hbmNlQVBJIiwiYXVkIjoiQXprYU1haW50ZW5hbmNlQ2xpZW50cyJ9.movRGaXRq-FNvME9rCfHmd2mQe3kMDhiKP5yVYoBO-U
+@engineerToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxNTAwOGViYy05ZWM1LTRjOWYtOWJmYy1mY2RmYWM3MTA1NzEiLCJlbWFpbCI6ImVuZ2luZWVyQGF6a2EuZGV2IiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6IlRlc3QgRW5naW5lZXIiLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJFbmdpbmVlciIsImp0aSI6ImNmOTdkMjkyLTg4OTMtNGEwYy1hNzNkLWQ5NTUxOGIyODJkNSIsImV4cCI6MTc4NTY3MTM1MywiaXNzIjoiQXprYU1haW50ZW5hbmNlQVBJIiwiYXVkIjoiQXprYU1haW50ZW5hbmNlQ2xpZW50cyJ9.ORYXrMHGRzRg_3yAg6T2ngjHi4I80XBSclIsVreuBEg
+@id = 1
+
+### 4) GET /Dashboard — health of the whole operation (any authenticated role)
+GET {{api}}/Dashboard
+Authorization: Bearer {{adminToken}}
+
+### 5) CREATE ASSETS — 2 smart meters at a customer address
+POST {{api}}/Assets
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "assetNumber": "AST-1001",
+  "assetType": 1,
+  "address": "12 Rue de la Paix, Paris",
+  "latitude": 48.8566,
+  "longitude": 2.3522,
+  "customerName": "Louvre SA",
+  "installationDate": "2025-03-14T09:00:00Z"
+}
+
+### 6) CREATE ASSET — second one
+POST {{api}}/Assets
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "assetNumber": "AST-1002",
+  "assetType": 2,
+  "address": "5 Av. des Champs, Lyon",
+  "latitude": 45.7640,
+  "longitude": 4.8357,
+  "customerName": "Louvre SA",
+  "installationDate": "2025-06-02T09:00:00Z"
+}
+
+### 7) LIST ASSETS — filter by customer
+GET {{api}}/Assets?customerName=Louvre&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### 8) CREATE ENGINEER — North team, 8h capacity, working 08:00-16:00
+POST {{api}}/Engineers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "employeeNumber": "EMP-001",
+  "fullName": "Marie Dupont",
+  "email": "marie.dupont@azka.dev",
+  "team": "North",
+  "region": "Île-de-France",
+  "skills": "Smart Meter, Gateway",
+  "workingHours": "08:00-16:00",
+  "dailyCapacityHours": 8
+}
+
+### 9) CREATE ENGINEER — South team
+POST {{api}}/Engineers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "employeeNumber": "EMP-002",
+  "fullName": "Karim Benali",
+  "email": "karim.benali@azka.dev",
+  "team": "South",
+  "region": "Auvergne-Rhône-Alpes",
+  "skills": "Transformer, Gateway",
+  "workingHours": "08:00-16:00",
+  "dailyCapacityHours": 8
+}
+
+### 10) WORKLOAD — Marie, today (utilization % must reflect later assignments)
+GET {{api}}/Engineers/1/workload?date=2026-08-03
+Authorization: Bearer {{adminToken}}
+
+### 11) AVAILABLE ENGINEERS — who can take a job in this window
+GET {{api}}/Engineers/available?from=2026-08-03T09:00:00&to=2026-08-03T11:00:00
+Authorization: Bearer {{adminToken}}
+
+### 12) CREATE WORK ORDER — Emergency, 2h, against AST-1001 (asset id 1)
+POST {{api}}/WorkOrders
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "assetId": 1,
+  "maintenanceType": 3,
+  "priority": 4,
+  "estimatedHours": 2,
+  "requestedDate": "2026-08-03T08:00:00Z",
+  "dueDate": "2026-08-03T12:00:00Z",
+  "notes": "Meter reporting no connectivity — customer escalation"
+}
+
+### 13) CREATE WORK ORDER — High, 3h, against AST-1002 (asset id 2)
+POST {{api}}/WorkOrders
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "assetId": 2,
+  "maintenanceType": 1,
+  "priority": 3,
+  "estimatedHours": 3,
+  "requestedDate": "2026-08-03T08:00:00Z",
+  "dueDate": "2026-08-04T16:00:00Z",
+  "notes": "Preventive check"
+}
+
+### 14) LIST WORK ORDERS — filter emergency
+GET {{api}}/WorkOrders?priority=4&status=Open&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### 15) AUTO-ASSIGN — system picks the least-loaded capable engineer (order id 1)
+POST {{api}}/Assignments/auto-assign
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "scheduledStart": "2026-08-03T09:00:00",
+  "scheduledEnd": "2026-08-03T11:00:00"
+}
+
+### 16) MANUAL ASSIGN — assign order 2 to engineer 2 (Karim)
+POST {{api}}/Assignments
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "workOrderId": 2,
+  "engineerId": 2,
+  "scheduledStart": "2026-08-03T10:00:00",
+  "scheduledEnd": "2026-08-03T13:00:00"
+}
+
+### 17) NEGATIVE TEST — overlapping window on same engineer must be rejected (409)
+POST {{api}}/Assignments
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "workOrderId": 1,
+  "engineerId": 2,
+  "scheduledStart": "2026-08-03T10:30:00",
+  "scheduledEnd": "2026-08-03T12:00:00"
+}
+
+### 18) LIST ASSIGNMENTS — status filter
+GET {{api}}/Assignments?status=Assigned&pageSize=20
+Authorization: Bearer {{adminToken}}
+
+### 19) RESCHEDULE — move assignment 1 earlier in the day
+PUT {{api}}/Assignments/1/reschedule
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "newScheduledStart": "2026-08-03T08:30:00",
+  "newScheduledEnd": "2026-08-03T10:30:00",
+  "changeReason": "Customer opened earlier"
+}
+
+### 20) WORK ORDER -> IN PROGRESS (board drop: Assigned -> InProgress)
+PATCH {{api}}/WorkOrders/1/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": 4
+}
+
+### 21) ASSIGNMENT -> COMPLETED
+PATCH {{api}}/Assignments/1/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": 4
+}
+
+### 22) WORK ORDER -> COMPLETED (board drop: InProgress -> Completed)
+PATCH {{api}}/WorkOrders/1/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": 5
+}
+
+### 23) WORK ORDER -> CANCELLED (negative path)
+PATCH {{api}}/WorkOrders/2/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": 6,
+  "notes": "Customer cancelled request"
+}
+
+### 24) ROLE TEST — Engineer token trying to DELETE an engineer -> 403 Forbidden
+DELETE {{api}}/Engineers/1
+Authorization: Bearer {{engineerToken}}
+
+### 25) DASHBOARD AFTER — verify completed/open/overdue counts moved
+GET {{api}}/Dashboard
+Authorization: Bearer {{adminToken}}
