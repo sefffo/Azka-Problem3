@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Rider IDE workspace
+.idea/
+
+# Frontend lives in its own repository (azka-maintenance-frontend)
+frontend/
