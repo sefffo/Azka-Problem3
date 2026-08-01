@@ -21,6 +21,18 @@ builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .AddApplicationPart(typeof(AuthController).Assembly);
 
+// CORS - allow the Angular frontend (dev server) to consume the API
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AngularClient", policy =>
+    {
+        policy.WithOrigins("http://localhost:4200", "https://localhost:4200", "http://localhost:5000")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
+
 //persistence DI
 builder.Services.AddPersistenceServices(builder.Configuration);
 
@@ -141,6 +153,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("AngularClient");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
