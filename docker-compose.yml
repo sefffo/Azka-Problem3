@@ -1,0 +1,53 @@
+version: '3.9'
+
+services:
+
+  # ── SQL Server ──────────────────────────────────────────────────────────────
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: azka_sqlserver
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "AzkaStrong@123!"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools18/bin/sqlcmd", "-S", "localhost",
+             "-U", "sa", "-P", "AzkaStrong@123!", "-Q", "SELECT 1",
+             "-No", "-C"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Azka API ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: azka_api
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: >
+        Server=sqlserver,1433;
+        Database=AzkaDb;
+        User Id=sa;
+        Password=AzkaStrong@123!;
+        TrustServerCertificate=True;
+        MultipleActiveResultSets=True
+      JwtSettings__SecretKey: "change-me-in-production-use-a-long-random-string"
+      JwtSettings__Issuer: "Azka"
+      JwtSettings__Audience: "AzkaClient"
+      JwtSettings__ExpirationMinutes: "60"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+volumes:
+  sqlserver_data:
