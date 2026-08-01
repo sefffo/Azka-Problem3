@@ -16,7 +16,7 @@ namespace Azka.Services.Implementation;
 ///  GET ALL ASSETS FLOW  (cached)
 /// ════════════════════════════════════════════════════════════
 ///
-///  HTTP GET /api/Assets?assetType=&status=&customerName=&page=
+///  HTTP GET /api/Assets?assetType=&amp;status=&amp;customerName=&amp;page=
 ///       │
 ///       ▼
 ///  [AssetsController] ──► GetAllAsync(AssetQueryDto)
@@ -67,8 +67,8 @@ namespace Azka.Services.Implementation;
 ///       │
 ///       ▼
 ///  InvalidateAssetCaches()
-///   ├─ IMemoryCache.Remove(AssetListPrefix tag)
-///   └─ IDashboardService.InvalidateDashboard()  (removes Dashboard cache key)
+///   ├─ MemoryCache.Compact(0)              (clears ALL cache entries)
+///   └─ IDashboardService.InvalidateDashboard()
 ///       │
 ///       ▼
 ///  HTTP 201 { asset }
@@ -146,9 +146,6 @@ public class AssetService(
     }
 
     // ── Writes (all invalidate asset list cache + dashboard cache) ───────────
-    
-    //da 3shan el cache mygebsh requests adyma so we use the invalidators to reamove the old key and add new one 
-    //kont ayez adef redis bs mfesh account maya fadi 3 upstash 
 
     public async Task<ApiResponse<AssetDto>> CreateAsync(CreateAssetDto dto)
     {
@@ -192,7 +189,12 @@ public class AssetService(
 
     private void InvalidateAssetCaches()
     {
-        cache.Remove(CacheKeys.AssetListPrefix + "tag");
+        // cache keys are fingerprinted per query params (assets_list_{type}_{status}_...)
+        // so we can't remove a single "tag" key — we must evict the whole cache.
+        // This mirrors the same pattern used in EngineerService.InvalidateEngineerCaches().
+        if (cache is MemoryCache mc)
+            mc.Compact(0);
+
         dashboardService.InvalidateDashboard();
     }
 
