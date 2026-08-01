@@ -150,7 +150,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 app.UseCors("AllowFrontend");
-app.UseHttpsRedirection();
+//app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
