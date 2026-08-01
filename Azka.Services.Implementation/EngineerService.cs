@@ -18,7 +18,7 @@ namespace Azka.Services.Implementation;
 ///  GET ALL ENGINEERS FLOW  (cached)
 /// ════════════════════════════════════════════════════════════
 ///
-///  HTTP GET /api/Engineers?region=&team=&isActive=&page=
+///  HTTP GET /api/Engineers?region=&amp;team=&amp;isActive=&amp;page=
 ///       │
 ///       ▼
 ///  [EngineersController] ──► GetAllAsync(EngineerQueryDto)
@@ -71,10 +71,10 @@ namespace Azka.Services.Implementation;
 ///  GET AVAILABLE ENGINEERS FLOW  (real-time — never cached)
 /// ════════════════════════════════════════════════════════════
 ///
-///  HTTP GET /api/Engineers/available?from=&to=&region=
+///  HTTP GET /api/Engineers/available?from=&amp;to=&amp;region=
 ///       │
 ///       ▼
-///  Validate: to > from  (else Failure 400)
+///  Validate: to &gt; from  (else Failure 400)
 ///       │
 ///       ▼
 ///  AvailableEngineersSpecification(region)
@@ -90,7 +90,7 @@ namespace Azka.Services.Implementation;
 ///   ├─ DailyCapacitySpecification(id, from.Date)
 ///   │   AssignmentRepository.ListAsync()   ← DB: Assignments + WorkOrders
 ///   │   currentLoad = SUM(EstimatedHours)
-///   │   └─ [currentLoad + duration > capacity] skip
+///   │   └─ [currentLoad + duration &gt; capacity] skip
 ///   └─ append to available[]
 ///       │
 ///       ▼
@@ -115,7 +115,7 @@ namespace Azka.Services.Implementation;
 ///       │
 ///       ▼
 ///  InvalidateEngineerCaches()
-///   ├─ MemoryCache.Compact(0)              (clears all engineer list keys)
+///   ├─ MemoryCache.Compact(1.0)            (clears 100% of cache entries)
 ///   └─ IDashboardService.InvalidateDashboard()
 ///       │
 ///       ▼
@@ -153,7 +153,6 @@ public class EngineerService(
 
     public async Task<ApiResponse<PagedResult<EngineerDto>>> GetAllAsync(EngineerQueryDto q)
     {
-        // da lel cached values tab3an dayman fresh w new 3shan lw hasal ay post 3la el engineers bmsah el key al adym w bahot gdeed 
         var cacheKey = CacheKeys.EngineerListPrefix +
                        $"{q.Region}_{q.Team}_{q.IsActive}_{q.WorkingHours}_{q.Page}_{q.PageSize}";
 
@@ -222,7 +221,7 @@ public class EngineerService(
 
         return ApiResponse<EngineerDto>.Success(MapToDto(engineer), "Engineer created successfully.");
     }
-    //hnstakhdem patch 3shan msh bn3dl 3la kolo 
+
     public async Task<ApiResponse<EngineerDto>> UpdateAsync(int id, UpdateEngineerDto dto)
     {
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
@@ -261,8 +260,6 @@ public class EngineerService(
 
     // ── Non-cached reads (real-time workload/availability) ───────────────────
 
-    
-    //msh hynf3 a3ml cache hena 3shan lazem ko request tegy b el avalabilty real time ==> maybe in the future we ill use SignalR
     public async Task<ApiResponse<EngineerWorkloadDto>> GetWorkloadAsync(int id, DateTime date)
     {
         var engineer = await unitOfWork.GetRepository<Engineer, int>().GetByIdAsync(id)
@@ -338,24 +335,14 @@ public class EngineerService(
 
     private void InvalidateEngineerCaches()
     {
+        // Compact(1.0) = evict 100% of all cache entries.
+        // Compact(0)   = evict 0%  (removes nothing) — that was the original bug.
         if (cache is MemoryCache mc)
-            mc.Compact(0);
+            mc.Compact(1.0);
 
-        cache.Remove(CacheKeys.EngineerListPrefix + "tag");
         dashboardService.InvalidateDashboard();
     }
-    
-    
-    //very important function
-    // as it helps in all the logic of auto assigning and conflict checks 
-    /// <summary>
-    ///  checks if the engineer is working within the given working hours
-    /// mohma gedannnn!!!!
-    /// </summary>
-    /// <param name="workingHours"></param>
-    /// <param name="start"></param>
-    /// <param name="end"></param>
-    /// <returns></returns>
+
     private static bool IsWithinWorkingHours(string workingHours, DateTime start, DateTime end)
     {
         var parts = workingHours.Split('-');
