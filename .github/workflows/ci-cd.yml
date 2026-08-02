@@ -8,12 +8,11 @@ on:
 
 env:
   DOTNET_VERSION: '8.0.x'
-  IMAGE_NAME: azka-field-ops-api
 
 jobs:
 
   # ─────────────────────────────────────────────────────────────────
-  # JOB 1 · Build & Test
+  # JOB 1 · Build & Test  (runs on every push + PR)
   # ─────────────────────────────────────────────────────────────────
   build-and-test:
     name: 🔨 Build & Test
@@ -63,52 +62,22 @@ jobs:
           JwtSettings__Issuer: "AzkaMaintenanceAPI"
           JwtSettings__Audience: "AzkaMaintenanceClients"
           JwtSettings__ExpiryInMinutes: "60"
+          EmailSettings__Host: "smtp.gmail.com"
+          EmailSettings__Port: "587"
+          EmailSettings__FromName: "Azka Maintenance"
+          EmailSettings__FromEmail: "noreply@example.com"
+          EmailSettings__Username: "noreply@example.com"
+          EmailSettings__Password: "ci-dummy-password"
         run: dotnet test --no-build -c Release --verbosity normal
 
   # ─────────────────────────────────────────────────────────────────
-  # JOB 2 · Docker Build & Push  (only on push to main)
-  # ─────────────────────────────────────────────────────────────────
-  docker:
-    name: 🐳 Docker Build & Push
-    needs: build-and-test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: ⬇️ Checkout
-        uses: actions/checkout@v4
-
-      - name: 🔑 Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: 🏷️ Extract metadata (tags & labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=sha-,format=short
-            type=raw,value=latest
-
-      - name: 🐳 Build & push image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  # ─────────────────────────────────────────────────────────────────
-  # JOB 3 · Deploy to Azure App Service  (only on push to main)
+  # JOB 2 · Deploy to Azure App Service  (push to main only)
+  # Publishes the .NET app directly — no Docker Hub needed.
+  # Azure App Service env vars handle all secrets at runtime.
   # ─────────────────────────────────────────────────────────────────
   deploy:
     name: 🚀 Deploy to Azure
-    needs: docker
+    needs: build-and-test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
@@ -122,12 +91,14 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
+      - name: 📦 Restore dependencies
+        run: dotnet restore
+
       - name: 📦 Publish
         run: |
           dotnet publish Azka.Web/Azka.Web.csproj \
             -c Release \
-            -o ./publish \
-            --no-restore
+            -o ./publish
 
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
