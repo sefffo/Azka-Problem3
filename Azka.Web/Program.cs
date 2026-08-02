@@ -32,14 +32,10 @@ builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .AddApplicationPart(typeof(AuthController).Assembly);
 
-// Run FluentValidation validators during model binding so API requests get
-// the same meaningful validation messages as the unit-tested validators.
 builder.Services.AddFluentValidationAutoValidation();
 
-//persistence DI
 builder.Services.AddPersistenceServices(builder.Configuration);
 
-// identity rules 
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     {
         options.Password.RequireDigit = true;
@@ -50,7 +46,6 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
     .AddEntityFrameworkStores<AppDbContext>()
     .AddDefaultTokenProviders();
 
-//  JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 builder.Services.AddAuthentication(options =>
     {
@@ -74,13 +69,10 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-
 builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("EmailSettings"));
 
-//DI
-
-#region DI of Services
+#region DI of Services 
 
 builder.Services.AddApplicationServices();
 builder.Services.AddServiceImplementations();
@@ -122,7 +114,6 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-
 #region Seeding Logic
 
 using (var scope = app.Services.CreateScope())
@@ -130,7 +121,6 @@ using (var scope = app.Services.CreateScope())
     var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await context.Database.MigrateAsync();
 
-    // ;azem pre seeded roles 3shan lma ahtagha fel creation 
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     string[] roles = ["Admin", "Dispatcher", "Engineer"];
     foreach (var role in roles)
@@ -146,12 +136,12 @@ using (var scope = app.Services.CreateScope())
 
 app.UseMiddleware<ExceptionHandlerMiddleware>();
 
-
+// Swagger enabled in all environments — available on the deployed API
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azka Maintenance API v1");
-    c.RoutePrefix = string.Empty;
+    c.RoutePrefix = "swagger";
 });
 
 app.UseCors("AllowFrontend");
