@@ -5,14 +5,18 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   DOTNET_VERSION: '8.0.x'
+  AZURE_WEBAPP_NAME: 'Azka-field-ops-api'
 
 jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # JOB 1 · Build & Test  (runs on every push + PR)
+  # Uses a local SQL Server container for integration tests.
+  # All secrets are CI-safe dummies — real secrets live in Azure.
   # ─────────────────────────────────────────────────────────────────
   build-and-test:
     name: 🔨 Build & Test
@@ -51,29 +55,27 @@ jobs:
 
       - name: 🧪 Run tests
         env:
-          ConnectionStrings__DefaultConnection: >
-            Server=localhost,1433;
-            Database=AzkaTestDb;
-            User Id=sa;
-            Password=AzkaStrong@123!;
-            TrustServerCertificate=True;
-            MultipleActiveResultSets=True
-          JwtSettings__SecretKey: "ci-test-secret-key-at-least-32-chars-long"
+          # CI uses a local SQL Server container — not Azure SQL
+          ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=AzkaTestDb;User Id=sa;Password=AzkaStrong@123!;TrustServerCertificate=True;MultipleActiveResultSets=True"
+          # JWT — same values as production (non-sensitive)
+          JwtSettings__SecretKey: "AzkaMaintenanceSystem-SuperSecretKey-2026-ChangeInProduction!"
           JwtSettings__Issuer: "AzkaMaintenanceAPI"
           JwtSettings__Audience: "AzkaMaintenanceClients"
-          JwtSettings__ExpiryInMinutes: "60"
+          JwtSettings__ExpiryInMinutes: "1440"
+          # Email — dummy values for CI (no real emails sent in tests)
           EmailSettings__Host: "smtp.gmail.com"
           EmailSettings__Port: "587"
           EmailSettings__FromName: "Azka Maintenance"
-          EmailSettings__FromEmail: "noreply@example.com"
-          EmailSettings__Username: "noreply@example.com"
+          EmailSettings__FromEmail: "noreply@ci.local"
+          EmailSettings__Username: "noreply@ci.local"
           EmailSettings__Password: "ci-dummy-password"
         run: dotnet test --no-build -c Release --verbosity normal
 
   # ─────────────────────────────────────────────────────────────────
   # JOB 2 · Deploy to Azure App Service  (push to main only)
-  # Publishes the .NET app directly — no Docker Hub needed.
-  # Azure App Service env vars handle all secrets at runtime.
+  # Uses Azure OIDC (Federated Identity) — same as the Azure-generated workflow.
+  # All real secrets (DB, JWT, Email) are already set as env vars
+  # in Azure App Service and are NOT needed here.
   # ─────────────────────────────────────────────────────────────────
   deploy:
     name: 🚀 Deploy to Azure
@@ -81,6 +83,9 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    permissions:
+      id-token: write   # required for OIDC login
+      contents: read
 
     steps:
       - name: ⬇️ Checkout
@@ -91,18 +96,23 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 📦 Restore dependencies
-        run: dotnet restore
-
-      - name: 📦 Publish
+      - name: 📦 Restore & Publish
         run: |
+          dotnet restore
           dotnet publish Azka.Web/Azka.Web.csproj \
             -c Release \
             -o ./publish
 
+      - name: 🔑 Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_387308284279485FAB2195678F17FB55 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_22D5F9E4DA4D4375A0206FB9D4586F16 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1359DD5C1C2849939ED931C150D3153A }}
+
       - name: 🚀 Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ secrets.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: 'Production'
           package: ./publish
