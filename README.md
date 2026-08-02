@@ -477,8 +477,10 @@ The `Azka.Tests` project covers:
 
 ## 👨‍💻 Contributors
 
-- **Saif Lotfy** — Backend API Development
-- **Yossef Abdelmoneim** — Frontend Development
+| Name | Role |
+|---|---|
+| **[Saif Lotfy](https://github.com/sefffo)** | Full Stack Developer · DevOps (Azure deployment, CI/CD, SQL migrations) |
+| **[Yossef Abdelmoneim](https://github.com/yossefabdelmoneim)** | Full Stack Developer (Angular 22 frontend + integration) |
 
 ---
 
