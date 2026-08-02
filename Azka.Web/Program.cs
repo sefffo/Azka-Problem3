@@ -79,7 +79,8 @@ builder.Services.Configure<EmailSettings>(
     builder.Configuration.GetSection("EmailSettings"));
 
 //DI
-#region DI of Services 
+
+#region DI of Services
 
 builder.Services.AddApplicationServices();
 builder.Services.AddServiceImplementations();
@@ -145,15 +146,14 @@ using (var scope = app.Services.CreateScope())
 
 app.UseMiddleware<ExceptionHandlerMiddleware>();
 
-if (app.Environment.IsDevelopment())
+
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azka Maintenance API v1");
-        c.RoutePrefix = string.Empty;
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Azka Maintenance API v1");
+    c.RoutePrefix = string.Empty;
+});
+
 app.UseCors("AllowFrontend");
 //app.UseHttpsRedirection();
 app.UseAuthentication();
