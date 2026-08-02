@@ -20,6 +20,7 @@ public class AssignmentServiceOtherTests
     private readonly Mock<IGenericRepository<AssignmentHistory, int>> _historyRepo = new();
     private readonly Mock<IGenericRepository<WorkOrder, int>> _workOrderRepo = new();
     private readonly Mock<IDbContextTransaction> _tx = new();
+    private readonly Mock<IDashboardService> _dashboardService = new();
     private readonly IAssignmentService _service;
 
     public AssignmentServiceOtherTests()
@@ -29,8 +30,8 @@ public class AssignmentServiceOtherTests
         _uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(_workOrderRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
-        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
-        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue(), _dashboardService.Object);
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue(), _dashboardService.Object);
     }
 
     // ── GetByIdAsync ─────────────────────────────────────────────────────────────────────────

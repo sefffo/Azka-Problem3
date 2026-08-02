@@ -174,17 +174,20 @@ namespace Azka.Services.Implementation;
 /// </summary>
 public class AssignmentService(
     IUnitOfWork unitOfWork,
-    BackgroundEmailQueue emailQueue) : IAssignmentService
+    BackgroundEmailQueue emailQueue,
+    IDashboardService dashboardService) : IAssignmentService
 {
     public async Task<ApiResponse<PagedResult<AssignmentDto>>> GetAllAsync(AssignmentQueryDto q)
     {
         var repo = unitOfWork.GetRepository<Assignment, int>();
 
         var countSpec = new AssignmentQuerySpecification(
-            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate, countOnly: true);
+            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate,
+            countOnly: true, excludeCancelled: q.ExcludeCancelled);
 
         var dataSpec = new AssignmentQuerySpecification(
-            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate, q.Page, q.PageSize);
+            q.EngineerId, q.WorkOrderId, q.Status, q.FromDate, q.ToDate, q.Page, q.PageSize,
+            excludeCancelled: q.ExcludeCancelled);
 
         var total = await repo.CountAsync(countSpec);
         var items = await repo.ListAsync(dataSpec);
@@ -252,6 +255,7 @@ public class AssignmentService(
         await unitOfWork.SaveChangesAsync();
 
         await tx.CommitAsync();
+        dashboardService.InvalidateDashboard();
 
         assignment.Engineer  = engineer;
         assignment.WorkOrder = workOrder;
@@ -289,38 +293,13 @@ public class AssignmentService(
         if (workOrder.Status == WorkOrderStatus.Assigned || workOrder.Status == WorkOrderStatus.InProgress)
             throw new BadRequestException($"Work order '{workOrder.WorkOrderNumber}' is already assigned.");
 
-        var engineers = await unitOfWork.GetRepository<Engineer, int>()
-            .ListAsync(new AvailableEngineersSpecification());
+        var candidates = await FindAvailableEngineersAsync(dto.ScheduledStart, dto.ScheduledEnd);
 
-        var durationHours = (dto.ScheduledEnd - dto.ScheduledStart).TotalHours;
-        Engineer? bestEngineer = null;
-        double lowestLoad = double.MaxValue;
-
-        foreach (var engineer in engineers)
-        {
-            if (!IsWithinWorkingHours(engineer.WorkingHours, dto.ScheduledStart, dto.ScheduledEnd))
-                continue;
-                                    // spec 3shan el check of conflicts fel mawa3id abl ma assign 3la had 
-            var conflictSpec = new AssignmentConflictSpecification(engineer.Id, dto.ScheduledStart, dto.ScheduledEnd);
-            if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
-                continue;
-
-            var capacitySpec = new DailyCapacitySpecification(engineer.Id, dto.ScheduledStart);
-            var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
-            var currentLoad = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
-
-            if (currentLoad + durationHours > engineer.DailyCapacityHours)
-                continue;
-
-            if (currentLoad < lowestLoad)
-            {
-                lowestLoad = currentLoad;
-                bestEngineer = engineer; // lw f3ln lafet 3lihom kolohom w l2eet a2l worl load m3 avaliable working hours fel youm yb2a hwa da 
-            }
-        }
-
-        if (bestEngineer is null)
+        if (candidates.Count == 0)
             throw new ServiceUnavailableException("No available engineer found for the requested time slot.");
+
+        var bestEngineer = candidates.OrderBy(c => c.Load).First().Engineer;
+        var lowestLoad   = candidates.Min(c => c.Load);
 
         await using var tx = await unitOfWork.BeginTransactionAsync();
 
@@ -342,10 +321,69 @@ public class AssignmentService(
 
         await tx.CommitAsync(); // all or none transaction 
 
+        dashboardService.InvalidateDashboard();
+
         assignment.Engineer  = bestEngineer;
         assignment.WorkOrder = workOrder;
         return ApiResponse<AssignmentDto>.Success(MapToDto(assignment),
             $"Auto-assigned to '{bestEngineer.FullName}' (load: {lowestLoad}h/{bestEngineer.DailyCapacityHours}h).");
+    }
+
+    public async Task<ApiResponse<SlotAvailabilityDto>> CheckAvailabilityAsync(DateTime start, DateTime end)
+    {
+        var candidates = await FindAvailableEngineersAsync(start, end);
+
+        return ApiResponse<SlotAvailabilityDto>.Success(new SlotAvailabilityDto
+        {
+            Available = candidates.Count > 0,
+            Engineers = candidates
+                .OrderBy(c => c.Load)
+                .Select(c => new EngineerAvailabilityDto
+                {
+                    Id                 = c.Engineer.Id,
+                    FullName           = c.Engineer.FullName,
+                    Region             = c.Engineer.Region,
+                    WorkingHours       = c.Engineer.WorkingHours,
+                    DailyCapacityHours = c.Engineer.DailyCapacityHours
+                })
+                .ToList()
+        });
+    }
+
+    /// <summary>
+    /// Returns active engineers who can take the requested slot: within working
+    /// hours, no conflicting assignment, and remaining daily capacity suffices.
+    /// Shared by AutoAssignAsync and CheckAvailabilityAsync.
+    /// </summary>
+    private async Task<List<(Engineer Engineer, double Load)>> FindAvailableEngineersAsync(
+        DateTime start, DateTime end)
+    {
+        var engineers = await unitOfWork.GetRepository<Engineer, int>()
+            .ListAsync(new AvailableEngineersSpecification());
+
+        var durationHours = (end - start).TotalHours;
+        var result = new List<(Engineer Engineer, double Load)>();
+
+        foreach (var engineer in engineers)
+        {
+            if (!IsWithinWorkingHours(engineer.WorkingHours, start, end))
+                continue;
+
+            var conflictSpec = new AssignmentConflictSpecification(engineer.Id, start, end);
+            if (await unitOfWork.GetRepository<Assignment, int>().AnyAsync(conflictSpec))
+                continue;
+
+            var capacitySpec = new DailyCapacitySpecification(engineer.Id, start);
+            var dayAssignments = await unitOfWork.GetRepository<Assignment, int>().ListAsync(capacitySpec);
+            var currentLoad = dayAssignments.Sum(a => a.WorkOrder.EstimatedHours);
+
+            if (currentLoad + durationHours > engineer.DailyCapacityHours)
+                continue;
+
+            result.Add((engineer, currentLoad));
+        }
+
+        return result;
     }
 
     private static bool IsWithinWorkingHours(string workingHours, DateTime start, DateTime end)
@@ -404,7 +442,8 @@ public class AssignmentService(
         await unitOfWork.SaveChangesAsync();
 
         await tx.CommitAsync();
-        if (!string.IsNullOrWhiteSpace(assignment.Engineer.Email))
+        dashboardService.InvalidateDashboard();
+        if (!string.IsNullOrWhiteSpace(assignment.Engineer?.Email))
             await emailQueue.EnqueueAsync(new EmailJobDescriptor(
                 To:      assignment.Engineer.Email,
                 Subject: $"Assignment Rescheduled — Work Order {assignment.WorkOrder.WorkOrderNumber}",
@@ -458,7 +497,9 @@ public class AssignmentService(
         unitOfWork.GetRepository<Assignment, int>().Update(assignment);
         await unitOfWork.SaveChangesAsync();
 
-        if (!string.IsNullOrWhiteSpace(assignment.Engineer.Email)
+        dashboardService.InvalidateDashboard();
+
+        if (!string.IsNullOrWhiteSpace(assignment.Engineer?.Email)
             && dto.Status is AssignmentStatus.InProgress or AssignmentStatus.Completed)
             await emailQueue.EnqueueAsync(new EmailJobDescriptor(
                 To:      assignment.Engineer.Email,
@@ -485,9 +526,9 @@ public class AssignmentService(
 
         var scheduledStart = assignment.ScheduledStart;
         var scheduledEnd   = assignment.ScheduledEnd;
-        var woNumber       = assignment.WorkOrder.WorkOrderNumber;
-        var engineerName   = assignment.Engineer.FullName;
-        var engineerEmail  = assignment.Engineer.Email;
+        var woNumber       = assignment.WorkOrder?.WorkOrderNumber ?? string.Empty;
+        var engineerName   = assignment.Engineer?.FullName ?? "Engineer";
+        var engineerEmail  = assignment.Engineer?.Email;
 
         await unitOfWork.GetRepository<AssignmentHistory, int>().AddAsync(new AssignmentHistory
         {
@@ -501,10 +542,13 @@ public class AssignmentService(
 
         assignment.Status           = AssignmentStatus.Cancelled;
         assignment.UpdatedAt        = DateTime.UtcNow;
-        assignment.WorkOrder.Status = WorkOrderStatus.PendingAssignment;
+        if (assignment.WorkOrder is not null)
+            assignment.WorkOrder.Status = WorkOrderStatus.PendingAssignment;
 
         unitOfWork.GetRepository<Assignment, int>().Update(assignment);
         await unitOfWork.SaveChangesAsync();
+
+        dashboardService.InvalidateDashboard();
 
         if (!string.IsNullOrWhiteSpace(engineerEmail))
             await emailQueue.EnqueueAsync(new EmailJobDescriptor(

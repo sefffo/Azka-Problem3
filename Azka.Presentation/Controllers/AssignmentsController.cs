@@ -26,6 +26,15 @@ public class AssignmentsController(IAssignmentService assignmentService) : Contr
     public async Task<IActionResult> GetById(int id)
         => Ok(await assignmentService.GetByIdAsync(id));
 
+    /// <summary>
+    /// Check whether any active engineer can take the requested time slot
+    /// (within working hours, no conflicting assignment, within daily capacity).
+    /// Used by the UI to warn before submitting an assignment.
+    /// </summary>
+    [HttpGet("availability")]
+    public async Task<IActionResult> CheckAvailability([FromQuery] DateTime start, [FromQuery] DateTime end)
+        => Ok(await assignmentService.CheckAvailabilityAsync(start, end));
+
     /// <summary>Assign a work order to an engineer (with conflict and capacity checks)</summary>
     [HttpPost]
     [Authorize(Roles = "Admin,Dispatcher")]

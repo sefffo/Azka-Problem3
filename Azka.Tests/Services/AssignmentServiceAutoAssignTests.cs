@@ -20,6 +20,7 @@ public class AssignmentServiceAutoAssignTests
     private readonly Mock<IGenericRepository<Assignment, int>> _assignmentRepo = new();
     private readonly Mock<IGenericRepository<AssignmentHistory, int>> _historyRepo = new();
     private readonly Mock<IDbContextTransaction> _tx = new();
+    private readonly Mock<IDashboardService> _dashboardService = new();
     private readonly IAssignmentService _service;
 
     private static readonly DateTime _start = new(2026, 7, 28, 9, 0, 0);
@@ -45,7 +46,7 @@ public class AssignmentServiceAutoAssignTests
         _uow.Setup(u => u.GetRepository<AssignmentHistory, int>()).Returns(_historyRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         _uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(_tx.Object);
-        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
+        _service = new AssignmentService(_uow.Object, new BackgroundEmailQueue(), _dashboardService.Object);
     }
 
     [Fact]

@@ -22,6 +22,7 @@ public class EngineerAvailabilityTests
     private readonly Mock<IGenericRepository<Engineer, int>> _engineerRepo = new();
     private readonly Mock<IGenericRepository<Assignment, int>> _assignmentRepo = new();
     private readonly Mock<IDbContextTransaction> _tx = new();
+    private readonly Mock<IDashboardService> _dashboardService = new();
     private readonly IAssignmentService _assignmentService;
     private readonly IEngineerService _engineerService;
     private readonly Engineer _engineer;
@@ -54,7 +55,7 @@ public class EngineerAvailabilityTests
         // Mock IDashboardService — InvalidateDashboard() is a no-op in tests.
         var dashboardService = new Mock<IDashboardService>();
 
-        _assignmentService = new AssignmentService(_uow.Object, new BackgroundEmailQueue());
+        _assignmentService = new AssignmentService(_uow.Object, new BackgroundEmailQueue(), _dashboardService.Object);
         _engineerService   = new EngineerService(_uow.Object, _cache, dashboardService.Object);
     }
 
@@ -166,7 +167,7 @@ public class EngineerAvailabilityTests
         woRepoMock.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((WorkOrder?)null);
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
-        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue(), new Mock<IDashboardService>().Object);
 
         var dto = new AutoAssignDto { WorkOrderId = 99, ScheduledStart = DateTime.UtcNow, ScheduledEnd = DateTime.UtcNow.AddHours(1) };
         await Assert.ThrowsAsync<NotFoundException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -180,7 +181,7 @@ public class EngineerAvailabilityTests
         woRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(wo);
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
-        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue(), new Mock<IDashboardService>().Object);
 
         var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = new DateTime(2026, 7, 28, 9, 0, 0), ScheduledEnd = new DateTime(2026, 7, 28, 11, 0, 0) };
         var ex = await Assert.ThrowsAsync<BadRequestException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -195,7 +196,7 @@ public class EngineerAvailabilityTests
         woRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(wo);
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
-        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue(), new Mock<IDashboardService>().Object);
 
         var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = DateTime.UtcNow, ScheduledEnd = DateTime.UtcNow.AddHours(1) };
         await Assert.ThrowsAsync<BadRequestException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -215,7 +216,7 @@ public class EngineerAvailabilityTests
         var uow = new Mock<IUnitOfWork>();
         uow.Setup(u => u.GetRepository<WorkOrder, int>()).Returns(woRepoMock.Object);
         uow.Setup(u => u.GetRepository<Engineer, int>()).Returns(engineerRepoMock.Object);
-        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue(), new Mock<IDashboardService>().Object);
 
         var dto = new AutoAssignDto { WorkOrderId = 1, ScheduledStart = DateTime.UtcNow, ScheduledEnd = DateTime.UtcNow.AddHours(1) };
         await Assert.ThrowsAsync<ServiceUnavailableException>(() => svc.AutoAssignAsync(dto, "System"));
@@ -256,7 +257,7 @@ public class EngineerAvailabilityTests
         uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
         uow.Setup(u => u.BeginTransactionAsync()).ReturnsAsync(txMock.Object);
 
-        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue());
+        var svc = new AssignmentService(uow.Object, new BackgroundEmailQueue(), new Mock<IDashboardService>().Object);
         Assignment? captured = null;
         assignmentRepoMock.Setup(r => r.AddAsync(It.IsAny<Assignment>()))
             .Callback<Assignment>(a => captured = a)

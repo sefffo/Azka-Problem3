@@ -104,7 +104,8 @@ namespace Azka.Services.Implementation;
 /// </summary>
 public class WorkOrderService(
     IUnitOfWork unitOfWork,
-    AppDbContext context) : IWorkOrderService
+    AppDbContext context,
+    IDashboardService dashboardService) : IWorkOrderService
 {
     public async Task<ApiResponse<PagedResult<WorkOrderDto>>> GetAllAsync(WorkOrderQueryDto q)
     {
@@ -166,6 +167,8 @@ public class WorkOrderService(
         await repo.AddAsync(workOrder);
         await unitOfWork.SaveChangesAsync();
 
+        dashboardService.InvalidateDashboard();
+
         workOrder.Asset = asset;
         return ApiResponse<WorkOrderDto>.Success(MapToDto(workOrder), "Work order created successfully.");
     }
@@ -186,6 +189,8 @@ public class WorkOrderService(
         unitOfWork.GetRepository<WorkOrder, int>().Update(workOrder);
         await unitOfWork.SaveChangesAsync();
 
+        dashboardService.InvalidateDashboard();
+
         return ApiResponse<WorkOrderDto>.Success(MapToDto(workOrder), "Status updated successfully.");
     }
 
@@ -200,6 +205,8 @@ public class WorkOrderService(
         workOrder.Status = WorkOrderStatus.Cancelled;
         unitOfWork.GetRepository<WorkOrder, int>().Update(workOrder);
         await unitOfWork.SaveChangesAsync();
+
+        dashboardService.InvalidateDashboard();
 
         return ApiResponse<bool>.Success(true, "Work order cancelled.");
     }

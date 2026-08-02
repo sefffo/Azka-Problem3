@@ -12,14 +12,15 @@ namespace Azka.Domain.Specifications.Assignments;
 public class AssignmentQuerySpecification : BaseSpecification<Assignment>
 {
     public AssignmentQuerySpecification(
-        int?              engineerId  = null,
-        int?              workOrderId = null,
-        AssignmentStatus? status      = null,
-        DateTime?         fromDate    = null,
-        DateTime?         toDate      = null,
-        int               page        = 1,
-        int               pageSize    = 20,
-        bool              countOnly   = false)
+        int?              engineerId       = null,
+        int?              workOrderId      = null,
+        AssignmentStatus? status           = null,
+        DateTime?         fromDate         = null,
+        DateTime?         toDate           = null,
+        int               page             = 1,
+        int               pageSize         = 20,
+        bool              countOnly        = false,
+        bool              excludeCancelled = false)
     {
         Expression<Func<Assignment, bool>>? predicate = null;
 
@@ -31,6 +32,9 @@ public class AssignmentQuerySpecification : BaseSpecification<Assignment>
 
         if (status.HasValue)
             predicate = Combine(predicate, a => a.Status == status.Value);
+
+        if (excludeCancelled)
+            predicate = Combine(predicate, a => a.Status != AssignmentStatus.Cancelled);
 
         if (fromDate.HasValue)
             predicate = Combine(predicate, a => a.ScheduledStart >= fromDate.Value);
