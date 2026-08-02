@@ -8,6 +8,7 @@ using Azka.Services.DI;
 using Azka.Services.Implementation.DI;
 using Azka.Services.Implementation.Email;
 using Azka.Web.Middlewares;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -30,6 +31,10 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .AddApplicationPart(typeof(AuthController).Assembly);
+
+// Run FluentValidation validators during model binding so API requests get
+// the same meaningful validation messages as the unit-tested validators.
+builder.Services.AddFluentValidationAutoValidation();
 
 //persistence DI
 builder.Services.AddPersistenceServices(builder.Configuration);
