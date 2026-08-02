@@ -1,4 +1,5 @@
 using Azka.Domain.Entities;
+using Azka.Domain.Enums;
 using Azka.Domain.Interfaces;
 using Azka.Domain.Specifications;
 using Azka.Persistence.Data;
@@ -30,6 +31,10 @@ public class EngineerServiceTests
         _uow.Setup(u => u.GetRepository<Engineer, int>()).Returns(_engineerRepo.Object);
         _uow.Setup(u => u.GetRepository<Assignment, int>()).Returns(_assignmentRepo.Object);
         _uow.Setup(u => u.SaveChangesAsync()).ReturnsAsync(1);
+
+        // Default: no assignments overlap today, so booked hours are 0.
+        _assignmentRepo.Setup(r => r.ListAsync(It.IsAny<ISpecification<Assignment>>()))
+            .ReturnsAsync(new List<Assignment>());
 
         // IMemoryCache mock: TryGetValue always misses so every call hits the DB.
         var cache = new Mock<IMemoryCache>();
@@ -72,6 +77,35 @@ public class EngineerServiceTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(0, result.Data!.TotalCount);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ComputesBookedHoursToday()
+    {
+        var engineers = new List<Engineer> { MakeEngineer(1) };
+        _engineerRepo.Setup(r => r.CountAsync(It.IsAny<ISpecification<Engineer>>())).ReturnsAsync(1);
+        _engineerRepo.Setup(r => r.ListAsync(It.IsAny<ISpecification<Engineer>>())).ReturnsAsync(engineers);
+
+        var today = DateTime.Today;
+        _assignmentRepo.Setup(r => r.ListAsync(It.IsAny<ISpecification<Assignment>>()))
+            .ReturnsAsync(new List<Assignment>
+            {
+                new()
+                {
+                    Id = 1,
+                    EngineerId = 1,
+                    WorkOrder = new WorkOrder { EstimatedHours = 3 },
+                    ScheduledStart = today.AddHours(9),
+                    ScheduledEnd = today.AddHours(12),
+                    Status = AssignmentStatus.Assigned
+                }
+            });
+
+        var result = await _service.GetAllAsync(new EngineerQueryDto { Page = 1, PageSize = 10 });
+
+        var dto = result.Data!.Items.Single();
+        Assert.Equal(3, dto.BookedHoursToday);
+        Assert.Equal(37.5, dto.UtilizationPercentage);
     }
 
     // ── GetByIdAsync ─────────────────────────────────────────────────────────

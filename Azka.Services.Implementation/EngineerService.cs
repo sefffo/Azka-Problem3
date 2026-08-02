@@ -15,7 +15,7 @@ namespace Azka.Services.Implementation;
 /// Manages engineer profiles, real-time workload, and availability checks.
 ///
 /// ════════════════════════════════════════════════════════════
-///  GET ALL ENGINEERS FLOW  (cached)
+///  GET ALL ENGINEERS FLOW  (real-time — never cached)
 /// ════════════════════════════════════════════════════════════
 ///
 ///  HTTP GET /api/Engineers?region=&amp;team=&amp;isActive=&amp;page=
@@ -24,22 +24,16 @@ namespace Azka.Services.Implementation;
 ///  [EngineersController] ──► GetAllAsync(EngineerQueryDto)
 ///       │
 ///       ▼
-///  IMemoryCache.TryGetValue(cacheKey)
+///  EngineerQuerySpecification (countOnly: true)
+///  EngineerRepository.CountAsync()         ← DB: Engineers COUNT
 ///       │
-///       ├─ [HIT] ──────────────────────────────────────────────────────────┐
-///       │                                                                   │
-///       ▼ [MISS]                                                            │
-///  EngineerQuerySpecification (countOnly: true)                             │
-///  EngineerRepository.CountAsync()         ← DB: Engineers COUNT           │
-///       │                                                                   │
-///  EngineerQuerySpecification (paged)                                       │
-///  EngineerRepository.ListAsync()          ← DB: Engineers SELECT + filters│
-///       │                                                                   │
-///  Build PagedResult&lt;EngineerDto&gt;                                           │
-///       │                                                                   │
-///  IMemoryCache.Set(key, result, TTL=5min)                                  │
-///       │                                                                   │
-///       └──────────────────────────────────────────────────────────────────┘
+///  EngineerQuerySpecification (paged)
+///  EngineerRepository.ListAsync()          ← DB: Engineers SELECT + filters
+///       │
+///  AssignmentsByEngineersOnDateSpecification(ids, today)
+///  AssignmentRepository.ListAsync()        ← DB: today's active assignments
+///       │
+///  Build PagedResult&lt;EngineerDto&gt;  (each row carries booked hours today)
 ///       │
 ///       ▼
 ///  HTTP 200 { items[], totalCount, page, pageSize }
@@ -146,19 +140,12 @@ public class EngineerService(
     IMemoryCache cache,
     IDashboardService dashboardService) : IEngineerService
 {
-    // Engineer lists change infrequently — 5-minute TTL is safe.
-    private static readonly TimeSpan ListCacheTtl = TimeSpan.FromMinutes(5);
+    // Engineer lists include live booked-hours — always read fresh from the DB.
 
     // ── Reads ────────────────────────────────────────────────────────────────
 
     public async Task<ApiResponse<PagedResult<EngineerDto>>> GetAllAsync(EngineerQueryDto q)
     {
-        var cacheKey = CacheKeys.EngineerListPrefix +
-                       $"{q.Region}_{q.Team}_{q.IsActive}_{q.WorkingHours}_{q.Page}_{q.PageSize}";
-
-        if (cache.TryGetValue(cacheKey, out PagedResult<EngineerDto>? cached))
-            return ApiResponse<PagedResult<EngineerDto>>.Success(cached!);
-
         var repo = unitOfWork.GetRepository<Engineer, int>();
 
         var countSpec = new EngineerQuerySpecification(
@@ -169,19 +156,22 @@ public class EngineerService(
         var total = await repo.CountAsync(countSpec);
         var items = await repo.ListAsync(dataSpec);
 
+        // Today's booked hours per engineer — computed live (never cached) so
+        // the list always reflects the latest assignments.
+        var engineerIds  = items.Select(e => e.Id).ToList();
+        var todayLoad    = await unitOfWork.GetRepository<Assignment, int>()
+            .ListAsync(new AssignmentsByEngineersOnDateSpecification(engineerIds, DateTime.Today));
+        var bookedByEngineer = todayLoad
+            .GroupBy(a => a.EngineerId)
+            .ToDictionary(g => g.Key, g => g.Sum(a => a.WorkOrder.EstimatedHours));
+
         var result = new PagedResult<EngineerDto>
         {
-            Items      = items.Select(MapToDto),
+            Items      = items.Select(e => MapToDto(e, bookedByEngineer.GetValueOrDefault(e.Id))),
             TotalCount = total,
             Page       = q.Page,
             PageSize   = q.PageSize
         };
-
-        cache.Set(cacheKey, result, new MemoryCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = ListCacheTtl,
-            Size = 1
-        });
 
         return ApiResponse<PagedResult<EngineerDto>>.Success(result);
     }
@@ -356,17 +346,20 @@ public class EngineerService(
         return reqStart >= whStart && reqEnd <= whEnd;
     }
 
-    private static EngineerDto MapToDto(Engineer e) => new()
+    private static EngineerDto MapToDto(Engineer e, double bookedToday = 0) => new()
     {
-        Id                 = e.Id,
-        EmployeeNumber     = e.EmployeeNumber,
-        FullName           = e.FullName,
-        Email              = e.Email,
-        Team               = e.Team,
-        Region             = e.Region,
-        Skills             = e.Skills,
-        WorkingHours       = e.WorkingHours,
-        DailyCapacityHours = e.DailyCapacityHours,
-        IsActive           = e.IsActive
+        Id                     = e.Id,
+        EmployeeNumber         = e.EmployeeNumber,
+        FullName               = e.FullName,
+        Email                  = e.Email,
+        Team                   = e.Team,
+        Region                 = e.Region,
+        Skills                 = e.Skills,
+        WorkingHours           = e.WorkingHours,
+        DailyCapacityHours     = e.DailyCapacityHours,
+        IsActive               = e.IsActive,
+        BookedHoursToday       = bookedToday,
+        UtilizationPercentage  = e.DailyCapacityHours > 0
+            ? Math.Round(bookedToday / e.DailyCapacityHours * 100, 1) : 0
     };
 }

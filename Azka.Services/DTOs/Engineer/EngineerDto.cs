@@ -12,4 +12,10 @@ public class EngineerDto
     public string WorkingHours       { get; set; } = string.Empty;
     public double DailyCapacityHours { get; set; }
     public bool   IsActive           { get; set; }
+
+    /// <summary>Total estimated hours of active assignments overlapping today.</summary>
+    public double BookedHoursToday { get; set; }
+
+    /// <summary>BookedHoursToday / DailyCapacityHours as a percentage (0-100+, can exceed 100).</summary>
+    public double UtilizationPercentage { get; set; }
 }
