@@ -1,12 +1,9 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# This workflow is kept as a fallback.
+# Primary CI/CD is handled by ci-cd.yml which includes tests before deploying.
 
 name: Build and deploy ASP.Net Core app to Azure Web App - Azka-field-ops-api
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:
@@ -39,7 +36,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write
       contents: read
 
     steps:
@@ -48,17 +44,9 @@ jobs:
         with:
           name: .net-app
 
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_387308284279485FAB2195678F17FB55 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_22D5F9E4DA4D4375A0206FB9D4586F16 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1359DD5C1C2849939ED931C150D3153A }}
-
       - name: Deploy to Azure Web App
-        id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'Azka-field-ops-api'
-          slot-name: 'Production'
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: .
